@@ -1,0 +1,155 @@
+detach("package:MASS", unload = TRUE)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(leaflet)
+library(stringr)
+library(viridis)
+
+setwd("C:/Users/Jakob/Documents/Research/Actual research")
+
+# Load FOI data for both genders
+foidata <- read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")
+
+# Filter antibiotics that have a bad model fit
+codes <- c("0501100H0", "0501060D0", "0501070X0", "0501070AE", 
+           "0501070I0", "0501090R0", "0501090K0")
+foidata <- foidata %>% 
+  filter(!BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
+
+# Load reference antibiotic data
+antibiotics <- read_excel("C:/Users/Jakob/Documents/Research/Actual research/data/FOIdata/foi02243_reference_tables.xlsx", sheet = 2)
+
+# Load GP patient data for males
+gpdatamale <- read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-male.csv") %>%
+  select(ORG_CODE, AGE, NUMBER_OF_PATIENTS) %>%
+  rename(TOTAL_NUMBER_OF_PATIENTS_MALE = NUMBER_OF_PATIENTS)
+
+# Load GP patient data for females
+gpdatafemale <- read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-female (1).csv") %>%
+  select(ORG_CODE, AGE, NUMBER_OF_PATIENTS) %>%
+  rename(TOTAL_NUMBER_OF_PATIENTS_FEMALE = NUMBER_OF_PATIENTS)
+
+# Merge male and female GP data
+gpdata_combined <- merge(gpdatafemale, gpdatamale, by = c("ORG_CODE", "AGE"), all = TRUE) %>%
+  mutate(TOTAL_NUMBER_OF_PATIENTS = TOTAL_NUMBER_OF_PATIENTS_MALE + TOTAL_NUMBER_OF_PATIENTS_FEMALE) %>%
+  rename(PRACTICE_CODE = ORG_CODE)
+
+# Remove invalid age categories
+gpdata_combined <- gpdata_combined %>%
+  filter(!(AGE %in% c("ALL", "95+"))) %>%
+  mutate(AGE = as.numeric(AGE))
+
+# Compute total patients per practice
+gpdata_combined <- gpdata_combined %>%
+  group_by(PRACTICE_CODE) %>%
+  summarise(TOTAL_PATIENTS = sum(TOTAL_NUMBER_OF_PATIENTS, na.rm = TRUE))
+
+# Load deprivation data
+deprivationdata <- read.csv("data/Data_fingertips/deprivation_data.csv") %>%
+  filter(Time.period == "2019", Area.Type == "GPs") %>%
+  select(PRACTICE_CODE = Area.Code, Value) 
+
+# Create deprivation quantiles
+deprivationdata$quantile <- cut(
+  deprivationdata$Value,
+  breaks = quantile(deprivationdata$Value, probs = seq(0, 1, 0.1), na.rm = TRUE),
+  labels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"),
+  include.lowest = TRUE
+)
+
+# Process FOI data for males
+foidata_male <- foidata %>%
+  filter(GENDER == "Male") %>%
+  left_join(gpdata_combined, by = "PRACTICE_CODE") %>%
+  left_join(deprivationdata, by = "PRACTICE_CODE") %>%
+  mutate(GENDER = "Male")
+
+# Process FOI data for females
+foidata_female <- foidata %>%
+  filter(GENDER == "Female") %>%
+  left_join(gpdata_combined, by = "PRACTICE_CODE") %>%
+  left_join(deprivationdata, by = "PRACTICE_CODE") %>%
+  mutate(GENDER = "Female")
+
+# Combine male and female data
+foidata <- bind_rows(foidata_male, foidata_female)%>%
+  select(quantile,TOTAL_PATIENTS,PRACTICE_CODE,ITEMS,BNF_CHEMICAL_SUBSTANCE_CODE,GENDER)
+
+foidata$ITEMS<-as.numeric(foidata$ITEMS)
+foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
+
+
+# Categorize antibiotics into groups
+foidata <- foidata %>%
+  mutate(ANTIBIOTIC_GROUP = case_when(
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501060D0") ~ "C&L",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501021M0", "0501021L0") ~ "Ceph's",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501100H0") ~ "Lep",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501050N0", "0501050H0", "0501050B0", "0501050A0") ~ "Macrolides",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501110C0") ~ "MTO",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501070X0", "0501070AE", "0501070I0") ~ "Other",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501015P0", "0501011P0", "0501012G0", "0501013K0", "0501013B0") ~ "Penicillins",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501120P0", "0501120X0", "0501120L0") ~ "Quinolones",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501080W0", "0501080D0") ~ "S&T",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501090R0", "0501090K0") ~ "TB",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501030V0", "0501030T0", "0501030P0", "0501030L0", "0501030Z0", "0501030I0") ~ "Tetracyclines",
+    BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501130R0", "0501130H0") ~ "UTIs",
+    TRUE ~ NA_character_
+  ))%>%
+  select(-BNF_CHEMICAL_SUBSTANCE_CODE)
+total_patients_per_quantile <- foidata %>%
+  select(quantile, PRACTICE_CODE, TOTAL_PATIENTS) %>% 
+  distinct() %>%  # Keeps only unique PRACTICE_CODE per quantile
+  group_by(quantile) %>%
+  summarise(TOTAL_PATIENTS = sum(TOTAL_PATIENTS, na.rm = TRUE))
+foidata<-foidata%>%
+  select(-PRACTICE_CODE,-TOTAL_PATIENTS)
+
+final <- foidata %>%
+  group_by(quantile, GENDER, ANTIBIOTIC_GROUP) %>%
+  summarise(ITEMS = sum(ITEMS, na.rm = TRUE), .groups = "drop")%>%
+  left_join(total_patients_per_quantile, by= "quantile")%>%
+  mutate(items_per_10000 = (ITEMS / TOTAL_PATIENTS)*10000)
+final <- final %>%
+  filter(!is.na(quantile))%>%
+  filter(!is.na(ANTIBIOTIC_GROUP))
+# Plot male and female antibiotic prescriptions
+last_points <- final %>%
+  group_by(ANTIBIOTIC_GROUP) %>%
+  slice_max(order_by = quantile, n = 1)
+
+ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+            size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+            show.legend = FALSE) +
+  labs(title = "Antibiotic Usage Across Quintiles by Gender",
+       x = "Quintile",
+       y = "Items per 10,000 Patients",
+       color = "Antibiotic Group",
+       linetype = "Gender") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_viridis_d(option = "turbo")
+
+ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP, 
+                  group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+            size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+            show.legend = FALSE) +
+  labs(title = "Antibiotic Usage Across Quintiles by Gender zoomed",
+       x = "Quintile",
+       y = "Items per 10,000 Patients",
+       color = "Antibiotic Group",
+       linetype = "Gender") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_viridis_d(option = "turbo") +
+  ylim(0, 600)
+
