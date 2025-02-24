@@ -1,0 +1,310 @@
+###############################################
+### LOAD LIBRARIES ############################
+###############################################
+
+
+detach("package:MASS", unload = TRUE)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(stringr)
+
+################################################
+### LOAD DATA ##################################
+################################################
+
+setwd("C:/Users/Jakob/Documents/Research/Actual research")
+foidata<-read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")
+#####################################################
+### EXCLUDE PRACTICES WITH LESS THAN 1000 PATIENTS###
+#####################################################
+#exclude_codes <- c("B81603", "C84135", "C84647", "C84720", "E87691", "E87694", 
+#                   "E87711", "E87772", "F84673", "G81703", "H85691", "H85695", 
+#                  "J82197", "J82217", "K84066", "L81655", "N81655", "Y00049", 
+#                 "Y00054", "Y00081", "Y00230", "Y00372", "Y00400", "Y00449", 
+#                "Y00572", "Y00848", "Y01262", "Y01845", "Y01924", "Y02045", 
+#               "Y02157", "Y02260", "Y02495", "Y02506", "Y02526", "Y02645", 
+#              "Y02873", "Y03103", "Y03303", "Y03528", "Y03584", "Y03587", 
+#             "Y04543", "Y05180", "Y05412", "Y05750", "Y05788", "Y05857", 
+#            "Y06095", "Y06113", "Y06389", "Y06499", "Y06545", "Y06592", 
+#           "Y07016")
+#
+# Filter out the PRACTICE_CODEs
+#foidata<- foidata %>%
+# filter(!PRACTICE_CODE %in% exclude_codes)
+##############################################################################
+### EDIT DEPRIVATION DATA ####################################################
+##############################################################################
+deprivationdata<-read.csv("data/Data_fingertips/deprivation_data.csv")%>%
+  select(-Sex,-Age,-Category,-Category.Type,-Lower.CI.95.0.limit,-Time.period.range,-Compared.to.goal,-New.data,-Time.period.Sortable,-Compared.to.ICB.sub.locations.value.or.percentiles,-Compared.to.England.value.or.percentiles,-Recent.Trend,-Value.note,-Denominator,-Count,-Upper.CI.99.8.limit,-Lower.CI.99.8.limit,-Upper.CI.95.0.limit,-Lower.CI.95.0.limit,-Indicator.ID,-Indicator.Name)
+deprivationdata<-subset(deprivationdata, Time.period == "2019") # Use only IDM 2019 (not other years)
+deprivationdata<-subset(deprivationdata,Area.Type=="GPs") # Use only GP's (not ICB's)
+deprivationdata <- deprivationdata %>%
+  rename(PRACTICE_CODE = Area.Code)
+deprivationdata<-deprivationdata%>%
+  select(PRACTICE_CODE,Value) # Now deprivationdata contains for every GP, the corresponding IDM 2019 value
+
+#########################################################################
+### EDIT GP POPULATION DATA #############################################
+#########################################################################
+
+gpdatamale<-read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-male.csv")#As of april 2022.
+# I chose this date because that is also the start of the financial year at which foidata begins.
+# I assume there are no significant changes in the amount of patients across GP's for this year.
+gpdatafemale<-read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-female (1).csv")#As of april 2022
+# Combine into one dataframe
+gpdata_combined <- merge(gpdatafemale, gpdatamale, 
+                         by = c("EXTRACT_DATE", "CCG_CODE", "ONS_CCG_CODE", "ORG_CODE", "POSTCODE", "AGE"), 
+                         suffixes = c("_female", "_male"))  %>%
+  select(-SEX_male,-SEX_female,-EXTRACT_DATE,-CCG_CODE,-ONS_CCG_CODE,-POSTCODE)
+
+gpdata_combined <- gpdata_combined %>%
+  mutate(AGE_BAND = cut(as.numeric(AGE), 
+                        breaks = c(0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Inf),
+                        labels = c("Age 0-5", "Age 6-10", "Age 11-20", "Age 21-30", "Age 31-40",
+                                   "Age 41-50", "Age 51-60", "Age 61-70", "Age 71-80",
+                                   "Age 81-90", "Age 91-100", "Age 100+"),
+                        right = TRUE,       # Include the upper boundary
+                        include.lowest = TRUE))
+# Include 95+ into 91-100
+gpdata_combined <- gpdata_combined %>%
+  mutate(
+    AGE_BAND = case_when(
+      AGE == "95+" ~ "Age 91-100",  # Set AGE_BAND to "Age 91-100" for AGE == "95+"
+      TRUE ~ AGE_BAND               # Retain existing AGE_BAND otherwise
+    )
+  )
+# Remove rows where AGE_BAND is NA (That is where AGE = ALL)
+gpdata_combined <- gpdata_combined %>%
+  filter(!is.na(AGE_BAND))
+
+
+# Summarize data by ORG_CODE and AGE_BAND
+gpdata_summary <- gpdata_combined %>%
+  group_by(ORG_CODE, AGE_BAND) %>%
+  summarize(
+    TOTAL_PATIENTS_female = sum(NUMBER_OF_PATIENTS_female, na.rm = TRUE),
+    TOTAL_PATIENTS_male = sum(NUMBER_OF_PATIENTS_male, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(ORG_CODE, AGE_BAND)
+gpdata_summary <- gpdata_summary %>%
+  rename(PRACTICE_CODE = ORG_CODE)
+###### Now gpdata_summary contains for every Age band within every practice,
+# the total number of male and female patients.
+
+
+
+##########################################
+##### FILTER ANTIBIOTICS #################
+##########################################
+
+
+# codes <- c()
+#foidata<- foidata %>%
+ #filter(BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
+
+##########################################
+##### EDIT FOIDATA #######################
+##########################################
+
+
+
+
+foidata<-foidata%>%
+  select(-FINANCIAL_YEAR,-UNIQUE_PATIENT_COUNT,-BNF_CHEMICAL_SUBSTANCE_CODE)
+foidata$ITEMS<-as.numeric(foidata$ITEMS)
+foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
+foidata<- foidata %>%
+  group_by(PRACTICE_CODE, GENDER, AGE_BAND) %>%
+  summarize(TOTAL_ITEMS = sum(ITEMS), .groups = "drop")
+foidata<-foidata%>%
+  left_join(deprivationdata,by="PRACTICE_CODE")
+# Filter out rows where GENDER is not "Male" or "Female" 37888 rows of 193496 total rows 
+foidata <- foidata %>%
+  filter(GENDER %in% c("Male", "Female"))
+foidata <- foidata %>%
+  left_join(gpdata_summary, by = c("PRACTICE_CODE", "AGE_BAND")) %>%
+  mutate(
+    total_patients_gender = if_else(
+      GENDER == "Male", 
+      TOTAL_PATIENTS_male, 
+      TOTAL_PATIENTS_female
+    )
+  ) %>%
+  select(-TOTAL_PATIENTS_male, -TOTAL_PATIENTS_female)
+foidata <- foidata %>%
+  mutate(item_ratio = TOTAL_ITEMS / total_patients_gender)
+
+#remove missing values, WHICH MEANS EXCLUDING AGES OVER 100!!!
+foidata <- foidata %>%
+  filter(!is.na(Value) & !is.na(item_ratio))
+# FROM THIS POINT ONWARDS, THERE ARE NO MORE NA's IN FOIDATA
+foidata$AGE_BAND <- as.factor(foidata$AGE_BAND)
+foidata <- foidata %>%
+  filter(is.finite(item_ratio))
+# Change the agebands into numerical midpoints, not sure if this is
+# appropriate. Basically, I assume everyone in an age category is exactly the average 
+# age of that category
+foidata$AGE_BAND_NUM <- with(foidata, 
+                             ifelse(AGE_BAND == "Age 0-5", 2.5,
+                                    ifelse(AGE_BAND == "Age 6-10", 8,
+                                           ifelse(AGE_BAND == "Age 11-20", 15,
+                                                  ifelse(AGE_BAND == "Age 21-30", 25,
+                                                         ifelse(AGE_BAND == "Age 31-40", 35,
+                                                                ifelse(AGE_BAND == "Age 41-50", 45,
+                                                                       ifelse(AGE_BAND == "Age 51-60", 55,
+                                                                              ifelse(AGE_BAND == "Age 61-70", 65,
+                                                                                     ifelse(AGE_BAND == "Age 71-80", 75,
+                                                                                            ifelse(AGE_BAND == "Age 81-90", 85,
+                                                                                                   ifelse(AGE_BAND == "Age 91-100", 95, NA))))))))))))
+
+
+
+
+
+#######################################################################################################
+### THIS WAS THE EDITING OF THE DATASET, NOW FOR THE REGRESSION #######################################
+### FOIDATA CONTAINS ITEM_RATIO, THE AMOUNT OF ITEMS PER PERSON IN EACH SEX/AGEBAND/GP COMBINATION, ###
+### VALUE, WHICH IS THE IMD2019 VALUE FOR THE CORRESPONDING GP, FIVE-YEAR AGE BANDS AND SEX ###########
+#######################################################################################################
+
+# Fit the negative binomial model with the offset manually included
+library(MASS)
+#########################
+foidata$AGE_BAND_NUM2 <- foidata$AGE_BAND_NUM^2  # Create squared age term
+
+# model with age-sex interaction term and age^2
+negative_binomial_model<-glm.nb(TOTAL_ITEMS ~  AGE_BAND_NUM + AGE_BAND_NUM2 + Value +
+         GENDER + AGE_BAND_NUM:GENDER + 
+         offset(log(total_patients_gender)), 
+       data = foidata)
+##############################
+# Summary of the model
+summary(negative_binomial_model)
+
+##########################################################
+### PSEUDO R SQUARED #####################################
+##########################################################
+
+library(pscl)
+
+pR2(negative_binomial_model)
+
+#################################################################
+### THE PLOTS BELOW ARE WAYS TO VISUALISE THE FIT OF THE MODEL###
+#################################################################
+#######################################
+### PREDICTION MODEL ##################
+#######################################
+# Get predicted values from the negative binomial model
+predicted_values <- predict(negative_binomial_model, type = "response")
+# Create a data frame with actual and predicted values
+plot_data <- data.frame(
+  Actual = foidata$TOTAL_ITEMS,
+  Predicted = predicted_values
+)
+
+# Create the plot
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "blue") +  # Plot the actual vs predicted points
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +  # Add perfect fit line
+  geom_smooth(method = "lm", color = "green", se = FALSE) +  # Add green linear regression line
+  labs(title = "Actual vs Predicted Values negative binomial", 
+       x = "Actual Values", 
+       y = "Predicted Values") +
+  theme_minimal()
+
+################################################
+### FIT ########################################
+################################################
+deviance_fitted <- deviance(negative_binomial_model)
+null_model <- glm.nb(TOTAL_ITEMS ~ 1 + offset(log(total_patients_gender)), data = foidata)
+deviance_null <- deviance(null_model)
+R2_dev <- 1 - (deviance_fitted / deviance_null)
+print(R2_dev)
+
+
+################################################
+### FREQUENCY DISTRIBUTION PLOT TOTAL_ITEMS ####
+################################################
+
+# Plot the distribution of TOTAL_ITEMS
+ggplot(foidata, aes(x = TOTAL_ITEMS)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +  # Histogram with bin width of 1
+  labs(title = "Distribution of TOTAL_ITEMS",
+       x = "TOTAL_ITEMS",
+       y = "Count") +
+  theme_minimal() +
+  xlim(0, 1000)  # Limit the x-axis to 2000
+
+################################################
+### RESIDUAL PLOTS #############################
+################################################
+residuals_nb <- residuals(negative_binomial_model, type = "pearson")
+fitted_nb <- fitted(negative_binomial_model)
+
+ggplot(data.frame(Fitted = fitted_nb, Residuals = residuals_nb), aes(x = Fitted, y = Residuals)) +
+  geom_point(color = "blue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Fitted Values", x = "Fitted Values", y = "Residuals") +
+  theme_minimal()
+
+### Q-Q plot
+
+qqnorm(residuals_nb, main = "Q-Q Plot of Residuals")
+qqline(residuals_nb, col = "red")
+
+###
+
+sqrt_abs_residuals <- sqrt(abs(residuals_nb))
+
+ggplot(data.frame(Fitted = fitted_nb, SqrtAbsResiduals = sqrt_abs_residuals), 
+       aes(x = Fitted, y = SqrtAbsResiduals)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Scale-Location Plot", x = "Fitted Values", y = "√|Residuals|") +
+  theme_minimal()
+
+###
+
+ggplot(data.frame(Predictor = as.factor(foidata$AGE_BAND_NUM), Residuals = residuals_nb), aes(x = Predictor, y = Residuals)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Predictor: AGE_BAND_NUM", x = "AGE_BAND_NUM", y = "Residuals") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+ggplot(data.frame(Predictor = as.factor(foidata$AGE_BAND_NUM2), Residuals = residuals_nb), aes(x = Predictor, y = Residuals)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Predictor: AGE_BAND_NUM", x = "AGE_BAND_NUM", y = "Residuals") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+
+ggplot(data.frame(Predictor = foidata$Value, Residuals = residuals_nb), aes(x = Predictor, y = Residuals)) +
+  geom_point(color = "blue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Predictor: deprivation", x = "Value", y = "Residuals") +
+  theme_minimal()
+
+ggplot(data.frame(Predictor = foidata$GENDER, Residuals = residuals_nb), aes(x = Predictor, y = Residuals)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Predictor: Gender", x = "GENDER", y = "Residuals") +
+  theme_minimal()
+###############################
+### INTERACTION AGE AND SEX ###
+###############################
+ggplot(foidata, aes(x = AGE_BAND_NUM, y = TOTAL_ITEMS)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 1) +
+  facet_wrap(~GENDER) +
+  labs(title = "Effect of Age on TOTAL_ITEMS by Gender",
+       x = "AGE_BAND_NUM",
+       y = "TOTAL_ITEMS") +
+  theme_minimal()
+  
+
