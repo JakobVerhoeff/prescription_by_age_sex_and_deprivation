@@ -1,4 +1,5 @@
-detach("package:MASS", unload = TRUE)
+# Code for Figure 2
+
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
@@ -7,28 +8,29 @@ library(readxl)
 library(leaflet)
 library(stringr)
 library(viridis)
-
-setwd("C:/Users/Jakob/Documents/Research/Actual research")
+library(here)
+setwd(here())
 
 # Load FOI data for both genders
-foidata <- read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")
-
-# Filter antibiotics that have a bad model fit
+foidata <- read.csv("data/foi02243_practice_2022_2023.csv")
+foidata$ITEMS<-as.numeric(foidata$ITEMS)
+foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
+# Filter antibiotics that have a negative pseudo R-squared
 codes <- c("0501100H0", "0501060D0", "0501070X0", "0501070AE", 
            "0501070I0", "0501090R0", "0501090K0")
 foidata <- foidata %>% 
   filter(!BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
 
-# Load reference antibiotic data
-antibiotics <- read_excel("C:/Users/Jakob/Documents/Research/Actual research/data/FOIdata/foi02243_reference_tables.xlsx", sheet = 2)
+# Load antibiotic data
+antibiotics <- read_excel("data/foi02243_reference_tables.xlsx", sheet = 2)
 
 # Load GP patient data for males
-gpdatamale <- read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-male.csv") %>%
+gpdatamale <- read.csv("data/gp-reg-pat-prac-sing-age-male.csv") %>%
   select(ORG_CODE, AGE, NUMBER_OF_PATIENTS) %>%
   rename(TOTAL_NUMBER_OF_PATIENTS_MALE = NUMBER_OF_PATIENTS)
 
 # Load GP patient data for females
-gpdatafemale <- read.csv("data/GP_data_NHS/gp-reg-pat-prac-sing-age-female (1).csv") %>%
+gpdatafemale <- read.csv("data/gp-reg-pat-prac-sing-age-female (1).csv") %>%
   select(ORG_CODE, AGE, NUMBER_OF_PATIENTS) %>%
   rename(TOTAL_NUMBER_OF_PATIENTS_FEMALE = NUMBER_OF_PATIENTS)
 
@@ -37,18 +39,22 @@ gpdata_combined <- merge(gpdatafemale, gpdatamale, by = c("ORG_CODE", "AGE"), al
   mutate(TOTAL_NUMBER_OF_PATIENTS = TOTAL_NUMBER_OF_PATIENTS_MALE + TOTAL_NUMBER_OF_PATIENTS_FEMALE) %>%
   rename(PRACTICE_CODE = ORG_CODE)
 
-# Remove invalid age categories
+# Ages 95+ all become 95
 gpdata_combined <- gpdata_combined %>%
-  filter(!(AGE %in% c("ALL", "95+"))) %>%
-  mutate(AGE = as.numeric(AGE))
-
-# Compute total patients per practice
-gpdata_combined <- gpdata_combined %>%
+  filter(AGE != "ALL") %>%
+  mutate(AGE = ifelse(AGE == "95+", "95", AGE))
+gpdata_combined$AGE<-as.numeric(gpdata_combined$AGE)
+# add male and female
+gpdata_combined<- gpdata_combined %>%
   group_by(PRACTICE_CODE) %>%
-  summarise(TOTAL_PATIENTS = sum(TOTAL_NUMBER_OF_PATIENTS, na.rm = TRUE))
+  summarise(
+    TOTAL_FEMALE_PATIENTS = sum(as.numeric(TOTAL_NUMBER_OF_PATIENTS_FEMALE), na.rm = TRUE),
+    TOTAL_MALE_PATIENTS = sum(as.numeric(TOTAL_NUMBER_OF_PATIENTS_MALE), na.rm = TRUE),
+    TOTAL_PATIENTS = sum(as.numeric(TOTAL_NUMBER_OF_PATIENTS), na.rm = TRUE)
+  )
 
 # Load deprivation data
-deprivationdata <- read.csv("data/Data_fingertips/deprivation_data.csv") %>%
+deprivationdata <- read.csv("data/deprivation_data.csv") %>%
   filter(Time.period == "2019", Area.Type == "GPs") %>%
   select(PRACTICE_CODE = Area.Code, Value) 
 
@@ -63,24 +69,25 @@ deprivationdata$quantile <- cut(
 # Process FOI data for males
 foidata_male <- foidata %>%
   filter(GENDER == "Male") %>%
-  left_join(gpdata_combined, by = "PRACTICE_CODE") %>%
+  left_join(gpdata_combined %>% select(PRACTICE_CODE, TOTAL_MALE_PATIENTS), by = "PRACTICE_CODE") %>%
   left_join(deprivationdata, by = "PRACTICE_CODE") %>%
   mutate(GENDER = "Male")
 
 # Process FOI data for females
 foidata_female <- foidata %>%
   filter(GENDER == "Female") %>%
-  left_join(gpdata_combined, by = "PRACTICE_CODE") %>%
+  left_join(gpdata_combined %>% select(PRACTICE_CODE, TOTAL_FEMALE_PATIENTS), by = "PRACTICE_CODE") %>%
   left_join(deprivationdata, by = "PRACTICE_CODE") %>%
   mutate(GENDER = "Female")
 
 # Combine male and female data
 foidata <- bind_rows(foidata_male, foidata_female)%>%
-  select(quantile,TOTAL_PATIENTS,PRACTICE_CODE,ITEMS,BNF_CHEMICAL_SUBSTANCE_CODE,GENDER)
+  select(quantile,TOTAL_MALE_PATIENTS,TOTAL_FEMALE_PATIENTS,PRACTICE_CODE,ITEMS,BNF_CHEMICAL_SUBSTANCE_CODE,GENDER)
 
-foidata$ITEMS<-as.numeric(foidata$ITEMS)
-foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
 
+foidata <- foidata %>%
+  mutate(TOTAL_PATIENTS = ifelse(GENDER == "Male", TOTAL_MALE_PATIENTS, TOTAL_FEMALE_PATIENTS)) %>%
+  select(-TOTAL_MALE_PATIENTS, -TOTAL_FEMALE_PATIENTS)
 
 # Categorize antibiotics into groups
 foidata <- foidata %>%
@@ -100,19 +107,35 @@ foidata <- foidata %>%
     TRUE ~ NA_character_
   ))%>%
   select(-BNF_CHEMICAL_SUBSTANCE_CODE)
+
+
 total_patients_per_quantile <- foidata %>%
-  select(quantile, PRACTICE_CODE, TOTAL_PATIENTS) %>% 
-  distinct() %>%  # Keeps only unique PRACTICE_CODE per quantile
-  group_by(quantile) %>%
-  summarise(TOTAL_PATIENTS = sum(TOTAL_PATIENTS, na.rm = TRUE))
+  group_by(quantile, GENDER, PRACTICE_CODE) %>%
+  summarise(TOTAL_PATIENTS = first(TOTAL_PATIENTS), .groups = "drop") %>%  # Keep only one TOTAL_PATIENTS per PRACTICE_CODE
+  group_by(quantile, GENDER) %>%
+  summarise(TOTAL_PATIENTS = sum(as.numeric(TOTAL_PATIENTS), na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = GENDER, values_from = TOTAL_PATIENTS, names_prefix = "TOTAL_")
+
+
+
 foidata<-foidata%>%
   select(-PRACTICE_CODE,-TOTAL_PATIENTS)
 
 final <- foidata %>%
-  group_by(quantile, GENDER, ANTIBIOTIC_GROUP) %>%
-  summarise(ITEMS = sum(ITEMS, na.rm = TRUE), .groups = "drop")%>%
-  left_join(total_patients_per_quantile, by= "quantile")%>%
+  group_by(quantile, GENDER, ANTIBIOTIC_GROUP)%>%
+  summarise(ITEMS = sum(ITEMS, na.rm = TRUE), .groups = "drop")
+
+
+total_patients_long <- total_patients_per_quantile %>%
+  pivot_longer(cols = starts_with("TOTAL_"), names_to = "GENDER", values_to = "TOTAL_PATIENTS") %>%
+  mutate(GENDER = ifelse(GENDER == "TOTAL_Female", "Female", "Male"))  # Standardize gender names
+
+# Join with final dataset
+final <- final %>%
+  left_join(total_patients_long, by = c("quantile", "GENDER"))
+final<-final%>%
   mutate(items_per_10000 = (ITEMS / TOTAL_PATIENTS)*10000)
+
 final <- final %>%
   filter(!is.na(quantile))%>%
   filter(!is.na(ANTIBIOTIC_GROUP))
@@ -124,10 +147,10 @@ last_points <- final %>%
 ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
-  geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
-            size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
-            show.legend = FALSE) +
-  labs(title = "Antibiotic Usage Across Quintiles by Gender",
+  # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+  #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+  #           show.legend = FALSE) +
+  labs(#title = "Antibiotic Usage Across Quintiles by Gender",
        x = "Quintile",
        y = "Items per 10,000 Patients",
        color = "Antibiotic Group",
@@ -140,10 +163,10 @@ ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP,
                   group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
-  geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
-            size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
-            show.legend = FALSE) +
-  labs(title = "Antibiotic Usage Across Quintiles by Gender zoomed",
+  # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+  #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+  #           show.legend = FALSE) +
+  labs(#title = "Antibiotic Usage Across Quintiles by Gender zoomed",
        x = "Quintile",
        y = "Items per 10,000 Patients",
        color = "Antibiotic Group",
@@ -151,5 +174,6 @@ ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP,
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   scale_color_viridis_d(option = "turbo") +
-  ylim(0, 600)
+  ylim(0, 1200)
 
+ggsave("plots/figure2.jpeg")
