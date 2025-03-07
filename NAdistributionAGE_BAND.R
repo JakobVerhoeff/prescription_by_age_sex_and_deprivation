@@ -1,3 +1,6 @@
+### Explore NA distributions by AGE BAND
+
+
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
@@ -5,9 +8,11 @@ library(sf)
 library(readxl)
 library(leaflet)
 library(stringr)
-setwd("C:/Users/Jakob/Documents/Research/Actual research")
-foidata<-read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")
-foidata <- foidata %>% select(-UNIQUE_PATIENT_COUNT,-FINANCIAL_YEAR)
+library(here)
+setwd(here())
+
+foidata<-read.csv("data/foi02243_practice_2022_2023.csv")
+foidata <- foidata %>% dplyr::select(-UNIQUE_PATIENT_COUNT,-FINANCIAL_YEAR)
 foidata$ITEMS<-as.numeric(foidata$ITEMS)
 
 # Filter rows where ITEMS is NA
