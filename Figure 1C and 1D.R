@@ -67,11 +67,11 @@ g1c <-
   theme_minimal() +  # Clean, minimal theme
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for clarity
   scale_color_viridis_d(option = "turbo") +  # Apply viridis color palette
-  ylim(0, 100)  # Set y-axis limits to match percentage range
+  theme(legend.position="bottom")
 
 ggsave("plots/figure1c.pdf")
 
-g1d <- ggplot(foidata_summary, aes(x = AGE_BAND, y = percentage, 
+ggplot(foidata_summary, aes(x = AGE_BAND, y = percentage, 
                             color = ANTIBIOTIC_GROUP, 
                             group = interaction(ANTIBIOTIC_GROUP, GENDER), 
                             linetype = GENDER)) +
@@ -91,4 +91,25 @@ g1d <- ggplot(foidata_summary, aes(x = AGE_BAND, y = percentage,
   scale_color_viridis_d(option = "turbo") +  # Apply viridis color palette
   ylim(0, 25)  # Set y-axis limits to match percentage range
  
-ggsave("plots/figure1d.pdf")
+ggsave("plots/figure1d_ALL.pdf")
+
+g1d <- ggplot(foidata_summary, aes(x = AGE_BAND, y = percentage, 
+                                   color = ANTIBIOTIC_GROUP, 
+                                   group = interaction(ANTIBIOTIC_GROUP, GENDER), 
+                                   linetype = GENDER)) +
+  geom_line(size = 1) +  # Line plot with a consistent width
+  geom_point(size = 2) +  # Points for each data point
+  # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+  #            size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position
+  #            show.legend = FALSE) +  # Hide label legend
+  labs(
+    #title = "Percentage of Antibiotic Use by Age Band - Male vs Female zoomed",
+    x = "Age Band",
+    y = "Percentage (%)",
+    color = "Antibiotic Group",
+    linetype = "Gender") +
+  theme_minimal() +  # Clean, minimal theme
+  scale_y_continuous(lim = c(1, 25)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for clarity
+  scale_color_viridis_d(option = "turbo",drop = FALSE) +  # Apply viridis color palette
+  theme(legend.position="bottom")
