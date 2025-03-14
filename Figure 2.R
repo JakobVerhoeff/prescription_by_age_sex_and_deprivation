@@ -1,5 +1,11 @@
+<<<<<<< HEAD:Figure 2.R
 # Code for Figure 2
 
+=======
+
+
+detach("package:MASS", unload = TRUE)
+>>>>>>> 1d1583aa0f5f75f3dd348cbf0907458472680b0a:Figure 2.
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
@@ -12,7 +18,11 @@ library(here)
 setwd(here())
 
 # Load FOI data for both genders
+<<<<<<< HEAD:Figure 2.R
 foidata <- read.csv("data/foi02243_practice_2022_2023.csv")
+=======
+foidata <- read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")
+>>>>>>> 1d1583aa0f5f75f3dd348cbf0907458472680b0a:Figure 2.
 foidata$ITEMS<-as.numeric(foidata$ITEMS)
 foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
 # Filter antibiotics that have a negative pseudo R-squared
@@ -22,7 +32,11 @@ foidata <- foidata %>%
   filter(!BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
 
 # Load antibiotic data
+<<<<<<< HEAD:Figure 2.R
 antibiotics <- read_excel("data/foi02243_reference_tables.xlsx", sheet = 2)
+=======
+antibiotics <- read_excel("C:/Users/Jakob/Documents/Research/Actual research/data/FOIdata/foi02243_reference_tables.xlsx", sheet = 2)
+>>>>>>> 1d1583aa0f5f75f3dd348cbf0907458472680b0a:Figure 2.
 
 # Load GP patient data for males
 gpdatamale <- read.csv("data/gp-reg-pat-prac-sing-age-male.csv") %>%

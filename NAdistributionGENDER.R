@@ -38,3 +38,5 @@ comparison <- data.frame(
 # Comparison contains for male and female, the ratio they occupy in the full dataset,
 # in a dataset with only redacted items, and in a dataset with no redacted items. This
 # table shows rows, and not total items.
+
+
