@@ -1,4 +1,4 @@
-##### Code to generate Figure 1A: 
+##### Code to generate Figure 1A 
 
 #detach("package:MASS", unload = TRUE)
 library(dplyr)

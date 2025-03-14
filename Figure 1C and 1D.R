@@ -10,84 +10,10 @@ library(stringr)
 library(here)
 
 setwd(here())
-foidata_orig<-read.csv("data/foi02243_practice_2022_2023.csv") %>% 
-  mutate(AGE_BAND = recode(
-    AGE_BAND,
-    "Age 0-5" = "0-5",
-    "Age 6-10" = "6-10",
-    "Age 11-20" = "11-20",
-    "Age 21-30" = "21-30",
-    "Age 31-40" = "31-40",
-    "Age 41-50" = "41-50",
-    "Age 51-60" = "51-60",
-    "Age 61-70" = "61-70",
-    "Age 71-80" = "71-80",
-    "Age 81-90" = "81-90",
-    "Age 91-100" = "91-100",
-    "Age over 100" = "over 100", 
-    "Unknown" = "NA"
-  )
-  ) %>%
-  filter(!is.na(AGE_BAND))  # Remove rows with excluded ages
 
-##### filter antibiotics that have a bad model fit
-### 
-codes <- c("0501100H0",
-           "0501060D0",
-           "0501070X0",
-           "0501070AE",
-           "0501070I0",
-           "0501090R0",
-           "0501090K0"
-)
-foidata<- foidata_orig %>%
-  filter(!BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
+# read in combined data 
+data <- read_csv("data/cleaned_combined_data.csv")
 
-#####
-foidata$ITEMS<-as.numeric(foidata$ITEMS)
-foidata$ITEMS[is.na(foidata$ITEMS)] <- 1 # I convert the NA's into 1's.
-foidata <- foidata %>% filter(GENDER %in% c("Male", "Female"))
-
-
-# # Add Gender column and combine both datasets
-# foidata_male <- foidata %>%
-#   filter(GENDER == "Male") %>%
-#   mutate(GENDER = "Male")
-# 
-# foidata_female <- foidata %>%
-#   filter(GENDER == "Female") %>%
-#   mutate(GENDER = "Female")
-# 
-# foidata_combined <- bind_rows(foidata_male, foidata_female)
-
-# Edit and group antibiotics
-antibiotics<-read_excel("data/foi02243_reference_tables.xlsx",sheet=2)
-antibiotics<-antibiotics%>%
-  select(BNF_CHEMICAL_SUBSTANCE,CHEMICAL_SUBSTANCE_BNF_DESCR)
-antibiotics <- antibiotics %>%
-  mutate(ANTIBIOTIC_GROUP = case_when(
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501060D0") ~ "C&L",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501021M0", "0501021L0") ~ "Ceph's",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501100H0") ~ "Lep",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501050N0", "0501050H0", "0501050B0", "0501050A0") ~ "Macrolides",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501110C0") ~ "MTO",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501070X0", "0501070AE", "0501070I0") ~ "Other",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501015P0", "0501011P0", "0501012G0", "0501013K0", "0501013B0") ~ "Penicillins",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501120P0", "0501120X0", "0501120L0") ~ "Quinolones",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501080W0", "0501080D0") ~ "S&T",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501090R0", "0501090K0") ~ "TB",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501030V0", "0501030T0", "0501030P0", "0501030L0", "0501030Z0", "0501030I0") ~ "Tetracyclines",
-    BNF_CHEMICAL_SUBSTANCE %in% c("0501130R0", "0501130H0") ~ "UTIs",
-    TRUE ~ NA_character_  # Assign NA if no match
-  ))%>%
-  select(-CHEMICAL_SUBSTANCE_BNF_DESCR)%>%
-  rename(BNF_CHEMICAL_SUBSTANCE_CODE = BNF_CHEMICAL_SUBSTANCE) %>%
-  filter(!is.na(ANTIBIOTIC_GROUP))  # Remove antibiotics not in these defined groups
-
-
-foidata_combined<-foidata%>%
-  left_join(antibiotics, by = "BNF_CHEMICAL_SUBSTANCE_CODE") %>%
-  filter(!is.na(ANTIBIOTIC_GROUP))  # Remove antibiotics not in these defined groups
 # Summarize data
 ###############################################
 foidata_summary <- foidata_combined %>%
