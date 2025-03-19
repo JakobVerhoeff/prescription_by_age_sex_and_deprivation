@@ -5,8 +5,10 @@ library(sf)
 library(readxl)
 library(leaflet)
 library(stringr)
-setwd("C:/Users/Jakob/Documents/Research/Actual research")
-foidata<-read.csv("data/FOIdata/foi02243_practice_2022_2023.csv")%>%
+library(here)
+setwd(here())
+
+foidata<-read.csv("data/foi02243_practice_2022_2023.csv")%>%
   select(GENDER,AGE_BAND)%>%
   group_by(AGE_BAND) %>%
   summarise(
