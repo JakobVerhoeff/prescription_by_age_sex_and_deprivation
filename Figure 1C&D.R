@@ -16,7 +16,7 @@ data <- read_csv("data/cleaned_combined_data.csv")
 
 # Summarize data
 ###############################################
-foidata_summary <- foidata_combined %>%
+foidata_summary <- data %>%
   group_by(GENDER, ANTIBIOTIC_GROUP, AGE_BAND) %>%
   summarise(total_items = sum(ITEMS, na.rm = TRUE), .groups = "drop") %>%
   ungroup() %>%
@@ -113,3 +113,22 @@ g1d <- ggplot(foidata_summary, aes(x = AGE_BAND, y = percentage,
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for clarity
   scale_color_viridis_d(option = "turbo",drop = FALSE) +  # Apply viridis color palette
   theme(legend.position="bottom")
+
+#### Stats for text 
+foidata_summary %>% filter(ANTIBIOTIC_GROUP == "S&T", GENDER == "Male")
+foidata_summary %>% filter(ANTIBIOTIC_GROUP == "UTIs", GENDER == "Male")
+foidata_summary %>% filter(ANTIBIOTIC_GROUP == "UTIs", GENDER == "Female")
+
+
+f_wide = foidata_summary %>%
+  select(GENDER, ANTIBIOTIC_GROUP, percentage, AGE_BAND) %>%
+  pivot_wider(names_from = GENDER, values_from = percentage) %>%
+  mutate(ratio = Female / Male)
+
+f_wide %>% filter(ANTIBIOTIC_GROUP == "UTIs") 
+
+f_wide %>% filter(ANTIBIOTIC_GROUP == "Ceph's")
+
+f_wide %>% filter(ANTIBIOTIC_GROUP == "Penicillins")
+
+f_wide %>% filter(ANTIBIOTIC_GROUP == "Tetracyclines")
