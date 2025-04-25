@@ -14,7 +14,7 @@ library(here)
 setwd(here())
 
 foidata_orig<-read.csv("data/foi02243_practice_2022_2023.csv") %>% 
-  mutate(AGE_BAND = recode(
+  mutate(AGE_BAND = dplyr::recode(
     AGE_BAND,
     "Age 0-5" = "0-5",
     "Age 6-10" = "6-10",
@@ -359,12 +359,6 @@ foidata_filtered %>% filter(PRACTICE_CODE == "A81001",
                             GENDER == "Female", 
                             AGE_BAND == "6-10") # should all have same population size
 
-###### Save cleaned data with all information 
-## 
-write_csv(foidata_filtered, "data/cleaned_combined_data.csv")
-
-colnames(foidata_filtered)
-
 ####### Save some population totals for the GPs in final data
 totals_gp_bysplit10 <- left_join(gpdata_combined, deprivationdata) %>%
   filter(PRACTICE_CODE %in% foidata_filtered$PRACTICE_CODE)
@@ -372,8 +366,31 @@ sum(gpdata_combined$total_patients) # All
 sum(totals_gp_bysplit10$total_patients) # Only those in foidata_filtered
 sum(foidata_filtered$total_patients) # Way more as have each antibiotic group here 
 
-totals_gp_bysplit10 <- totals_gp_bysplit10 %>% 
+totals_gp_bysplit10_gender <- totals_gp_bysplit10 %>% 
   group_by(GENDER, split10) %>%
   summarise(total_population = sum(total_patients))
-write_csv(totals_gp_bysplit10, "data/cleaned_totals_gp_bysplit10.csv")
-sum(totals_gp_bysplit10$total_population) # Only those in foidata_filtered
+write_csv(totals_gp_bysplit10_gender, "data/cleaned_totals_gp_bysplit10_gender.csv")
+sum(totals_gp_bysplit10_gender$total_population) # Only those in foidata_filtered
+
+totals_gp_bysplit10_agesex <- totals_gp_bysplit10 %>% 
+  group_by(GENDER, AGE_BAND, split10) %>%
+  summarise(total_population = sum(total_patients))
+write_csv(totals_gp_bysplit10_agesex, "data/cleaned_totals_gp_bysplit10_agesex.csv")
+sum(totals_gp_bysplit10_gender$total_population) 
+sum(totals_gp_bysplit10_agesex$total_population) 
+
+
+### Need to include those ages with no prescribing
+full_grid <- foidata_filtered %>% 
+  complete(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, fill = list(ITEMS = 0, ITEMS4 = 0)) %>%
+  left_join(gpdata_combined,by = c("PRACTICE_CODE", "AGE_BAND", "GENDER"))
+
+##### TO DO ADD IN ZERO ITEMS!!! 
+
+
+###### Save cleaned data with all information 
+## 
+write_csv(foidata_filtered, "data/cleaned_combined_data.csv")
+
+colnames(foidata_filtered)
+

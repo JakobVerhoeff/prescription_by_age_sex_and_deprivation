@@ -130,7 +130,7 @@ data <- read_csv("data/cleaned_combined_data.csv")
   #   pivot_longer(cols = starts_with("TOTAL_"), names_to = "GENDER", values_to = "TOTAL_PATIENTS") %>%
   #   mutate(GENDER = ifelse(GENDER == "TOTAL_Female", "Female", "Male"))  # Standardize gender names
   # 
-totals_gp_bysplit10 <- read_csv("data/cleaned_totals_gp_bysplit10.csv")
+totals_gp_bysplit10 <- read_csv("data/cleaned_totals_gp_bysplit10_gender.csv")
 
 final = data %>%
   group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
@@ -140,7 +140,7 @@ final = data %>%
 
 final$split10 <- factor(final$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
 
-ggplot(final, aes(x = split10, y = items_per_10000, 
+g1 <- ggplot(final, aes(x = split10, y = items_per_10000, 
                   color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), 
                   linetype = GENDER)) +
   geom_line(size = 1) +
@@ -155,9 +155,12 @@ ggplot(final, aes(x = split10, y = items_per_10000,
        linetype = "Gender") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(col=guide_legend(ncol=2), linetype=guide_legend(ncol=2)) + 
   scale_color_viridis_d(option = "turbo")
 
-ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP, 
+ggsave("plots/figure2a.jpeg")
+
+g2 <- ggplot(final, aes(x = split10, y = items_per_10000, color = ANTIBIOTIC_GROUP, 
                   group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
@@ -171,7 +174,178 @@ ggplot(final, aes(x = quantile, y = items_per_10000, color = ANTIBIOTIC_GROUP,
        linetype = "Gender") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(col=guide_legend(ncol=2), linetype=guide_legend(ncol=2)) + 
   scale_color_viridis_d(option = "turbo") +
   ylim(0, 1200)
 
-ggsave("plots/figure2.jpeg")
+ggsave("plots/figure2b.jpeg")
+
+#### Age/sex distribution by quintile 
+totals_gp_bysplit10_as <- read_csv("data/cleaned_totals_gp_bysplit10_agesex.csv")
+totals_gp_bysplit10_as$split10 <- factor(totals_gp_bysplit10_as$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+totals_gp_bysplit10_as <- as.data.frame(totals_gp_bysplit10_as)
+
+# Visualise this
+ggplot(totals_gp_bysplit10_as, aes(x = factor(split10), y = total_population, fill = AGE_BAND)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Demographic split by IMD Decile and Sex",
+    x = "IMD Decile",
+    y = "Population proportion"
+  ) +
+  theme_minimal() + 
+  facet_wrap(~GENDER)
+ggsave("plots/age_sex_split_by_IMD.jpeg")
+
+ggplot(totals_gp_bysplit10_as, aes(x = factor(split10), y = total_population, fill = AGE_BAND)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Demographic split by IMD Decile and Sex",
+    x = "IMD Decile",
+    y = "Population size"
+  ) +
+  theme_minimal() + 
+  facet_wrap(~GENDER)
+ggsave("plots/age_sex_split_by_IMD_numbers.jpeg")
+
+g3 <- ggplot(totals_gp_bysplit10_as, aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
+  geom_bar(stat = "identity") +
+#  guides(fill=guide_legend(ncol=2)) + 
+  labs(
+    x = "Gender",
+    y = "Population size"
+  ) +
+  scale_fill_discrete("Age Band") + 
+  theme_minimal() + 
+  facet_wrap(~factor(split10), nrow = 2)
+
+ggsave("plots/figure2c.jpeg")
+
+g4 <- ggplot(totals_gp_bysplit10_as %>% filter(split10 %in% c("Q1", "Q10")), aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
+  geom_bar(stat = "identity", position = "fill") +
+  #  guides(fill=guide_legend(ncol=2)) + 
+  labs(
+    x = "Gender",
+    y = "Population proportions"
+  ) +
+  scale_fill_discrete("Age Band") + 
+  theme_minimal() + 
+  facet_wrap(~factor(split10), ncol = 2)
+
+ggsave("plots/figure2d.jpeg")
+
+## Prescription rates by age sex
+age_sex_imd = data %>%
+  group_by(split10, GENDER, AGE_BAND)%>%
+  summarise(ITEMS = sum(ITEMS)) %>% 
+            #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
+  left_join(totals_gp_bysplit10_as) %>%
+  mutate(items_per_10000 = ITEMS / total_population * 10000)
+
+age_sex_imd$split10 <- factor(age_sex_imd$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+
+age_sex_imd$AGE_BAND <- factor(age_sex_imd$AGE_BAND, 
+                                    levels = c("0-5", "6-10", "11-20", 
+                                               "21-30", "31-40", "41-50", 
+                                               "51-60", "61-70", "71-80", 
+                                               "81-90", "91-100"))
+
+
+ggplot(age_sex_imd, aes(x = factor(split10), y = items_per_10000, fill = AGE_BAND)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Antibiotic Prescriptions by IMD Decile, Age Band, and Sex",
+    x = "IMD Decile",
+    y = "Number of Prescriptions"
+  ) +
+  theme_minimal() + 
+  facet_wrap(~GENDER)
+
+### each antibiotic 
+age_sex_imd = data %>%
+  group_by(split10, GENDER, AGE_BAND, ANTIBIOTIC_GROUP)%>%
+  summarise(ITEMS = sum(ITEMS)) %>% 
+  #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
+  left_join(totals_gp_bysplit10_as) %>%
+  mutate(items_per_10000 = ITEMS / total_population * 10000)
+
+age_sex_imd$split10 <- factor(age_sex_imd$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+
+age_sex_imd$AGE_BAND <- factor(age_sex_imd$AGE_BAND, 
+                               levels = c("0-5", "6-10", "11-20", 
+                                          "21-30", "31-40", "41-50", 
+                                          "51-60", "61-70", "71-80", 
+                                          "81-90", "91-100"))
+
+
+ggplot(age_sex_imd, aes(x = factor(split10), y = items_per_10000, fill = AGE_BAND)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Antibiotic Prescriptions by IMD Decile, Age Band, and Sex",
+    x = "IMD Decile",
+    y = "Number of Prescriptions"
+  ) +
+  theme_minimal() + 
+  facet_grid(ANTIBIOTIC_GROUP~GENDER)
+
+ggplot(age_sex_imd, aes(x = split10, y = items_per_10000, 
+                  color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), 
+                  linetype = GENDER)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+  #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+  #           show.legend = FALSE) +
+  labs(#title = "Antibiotic Usage Across Quintiles by Gender",
+    x = "Quintile",
+    y = "Items per 10,000 Patients",
+    color = "Antibiotic Group",
+    linetype = "Gender") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_viridis_d(option = "turbo") + 
+  facet_wrap(~AGE_BAND)
+
+#### Join most useful together
+library(patchwork) 
+(g1 + g2 + plot_layout(guides = "collect", widths = c(2,2))) / (g3 + g4 + plot_layout(guides = "collect", widths = c(3,1))) & plot_annotation(tag_levels = 'A')
+ggsave("plots/figure2.jpeg", width = 12, height = 8)
+
+
+
+
+
+
+## Do men get more pencillins than women? Does this explain it? 
+data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
+  group_by(GENDER) %>%
+  summarise(sum(ITEMS)) 
+# No... 
+# Does a certain age group get more penicillins? 
+data$AGE_BAND <- factor(data$AGE_BAND, 
+                               levels = c("0-5", "6-10", "11-20", 
+                                          "21-30", "31-40", "41-50", 
+                                          "51-60", "61-70", "71-80", 
+                                          "81-90", "91-100"))
+totals_age <- totals_gp_bysplit10_as %>%
+  group_by(AGE_BAND) %>%
+  summarise(total = sum(total_population))
+pen_age <- data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
+  group_by(AGE_BAND) %>%
+  summarise(total_items = sum(ITEMS)) %>%
+  left_join(totals_age) %>%
+  mutate(items_per_10000 = (total_items / total)*10000) %>%
+  arrange(items_per_10000)
+pen_age$AGE_BAND <- factor(pen_age$AGE_BAND, 
+                        levels = c("0-5", "6-10", "11-20", 
+                                   "21-30", "31-40", "41-50", 
+                                   "51-60", "61-70", "71-80", 
+                                   "81-90", "91-100"))
+
+
+ggplot(pen_age, aes(x=AGE_BAND, y = items_per_10000)) + 
+  geom_point() + 
+  geom_line() + 
+  theme_minimal()
+
+## yes more in kids and v old... 
