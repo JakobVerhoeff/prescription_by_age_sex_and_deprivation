@@ -14,176 +14,252 @@ setwd(here())
 # read in combined data 
 data <- read_csv("data/cleaned_combined_data.csv")
 
-# # Filter antibiotics that have a negative pseudo R-squared
-# codes <- c("0501100H0", "0501060D0", "0501070X0", "0501070AE", 
-#            "0501070I0", "0501090R0", "0501090K0")
-# foidata <- foidata %>% 
-#   filter(!BNF_CHEMICAL_SUBSTANCE_CODE %in% codes)
-# 
-# # Load antibiotic data
-# # Load deprivation data
-# deprivationdata <- read.csv("data/deprivation_data.csv") %>%
-#   filter(Time.period == "2019", Area.Type == "GPs") %>%
-#   select(PRACTICE_CODE = Area.Code, Value) 
-# 
-# # Create deprivation quantiles
-# deprivationdata$quantile <- cut(
-#   deprivationdata$Value,
-#   breaks = quantile(deprivationdata$Value, probs = seq(0, 1, 0.1), na.rm = TRUE),
-#   labels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"),
-#   include.lowest = TRUE
-# )
-# 
-# # Process FOI data for males
-# foidata_male <- foidata %>%
-#   filter(GENDER == "Male") %>%
-#   left_join(gpdata_combined %>% select(PRACTICE_CODE, TOTAL_MALE_PATIENTS), by = "PRACTICE_CODE") %>%
-#   left_join(deprivationdata, by = "PRACTICE_CODE") %>%
-#   mutate(GENDER = "Male")
-# 
-# # Process FOI data for females
-# foidata_female <- foidata %>%
-#   filter(GENDER == "Female") %>%
-#   left_join(gpdata_combined %>% select(PRACTICE_CODE, TOTAL_FEMALE_PATIENTS), by = "PRACTICE_CODE") %>%
-#   left_join(deprivationdata, by = "PRACTICE_CODE") %>%
-#   mutate(GENDER = "Female")
-# 
-# # Combine male and female data
-# foidata <- bind_rows(foidata_male, foidata_female)%>%
-#   select(quantile,TOTAL_MALE_PATIENTS,TOTAL_FEMALE_PATIENTS,PRACTICE_CODE,ITEMS,BNF_CHEMICAL_SUBSTANCE_CODE,GENDER)
-# 
-# 
-# foidata <- foidata %>%
-#   mutate(TOTAL_PATIENTS = ifelse(GENDER == "Male", TOTAL_MALE_PATIENTS, TOTAL_FEMALE_PATIENTS)) %>%
-#   select(-TOTAL_MALE_PATIENTS, -TOTAL_FEMALE_PATIENTS)
-# 
-# # Categorize antibiotics into groups
-# foidata <- foidata %>%
-#   mutate(ANTIBIOTIC_GROUP = case_when(
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501060D0") ~ "C&L",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501021M0", "0501021L0") ~ "Ceph's",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501100H0") ~ "Lep",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501050N0", "0501050H0", "0501050B0", "0501050A0") ~ "Macrolides",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501110C0") ~ "MTO",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501070X0", "0501070AE", "0501070I0") ~ "Other",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501015P0", "0501011P0", "0501012G0", "0501013K0", "0501013B0") ~ "Penicillins",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501120P0", "0501120X0", "0501120L0") ~ "Quinolones",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501080W0", "0501080D0") ~ "S&T",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501090R0", "0501090K0") ~ "TB",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501030V0", "0501030T0", "0501030P0", "0501030L0", "0501030Z0", "0501030I0") ~ "Tetracyclines",
-#     BNF_CHEMICAL_SUBSTANCE_CODE %in% c("0501130R0", "0501130H0") ~ "UTIs",
-#     TRUE ~ NA_character_
-#   ))%>%
-#   select(-BNF_CHEMICAL_SUBSTANCE_CODE)
-# 
-# 
-# total_patients_per_quantile <- foidata %>%
-#   group_by(quantile, GENDER, PRACTICE_CODE) %>%
-#   summarise(TOTAL_PATIENTS = first(TOTAL_PATIENTS), .groups = "drop") %>%  # Keep only one TOTAL_PATIENTS per PRACTICE_CODE
-#   group_by(quantile, GENDER) %>%
-#   summarise(TOTAL_PATIENTS = sum(as.numeric(TOTAL_PATIENTS), na.rm = TRUE), .groups = "drop") %>%
-#   pivot_wider(names_from = GENDER, values_from = TOTAL_PATIENTS, names_prefix = "TOTAL_")
-# 
-# 
-# 
-# foidata<-foidata%>%
-#   select(-PRACTICE_CODE,-TOTAL_PATIENTS)
-# 
-# final <- foidata %>%
-#   group_by(quantile, GENDER, ANTIBIOTIC_GROUP)%>%
-#   summarise(ITEMS = sum(ITEMS, na.rm = TRUE), .groups = "drop")
-# 
-# 
-# total_patients_long <- total_patients_per_quantile %>%
-#   pivot_longer(cols = starts_with("TOTAL_"), names_to = "GENDER", values_to = "TOTAL_PATIENTS") %>%
-#   mutate(GENDER = ifelse(GENDER == "TOTAL_Female", "Female", "Male"))  # Standardize gender names
-# 
-# # Join with final dataset
-# final <- final %>%
-#   left_join(total_patients_long, by = c("quantile", "GENDER"))
-# final<-final%>%
-#   mutate(items_per_10000 = (ITEMS / TOTAL_PATIENTS)*10000)
-# 
-# final <- final %>%
-#   filter(!is.na(quantile))%>%
-#   filter(!is.na(ANTIBIOTIC_GROUP))
-# # Plot male and female antibiotic prescriptions
-# last_points <- final %>%
-#   group_by(ANTIBIOTIC_GROUP) %>%
-#   slice_max(order_by = quantile, n = 1)
+# GP population data: by IMD + gender
+totals_gp_bysplit10 <- read_csv("data/cleaned_totals_gp_bysplit10_sexgp.csv")
 
-#### Do per 10000
+# imd population by age and sex for England
+# from: https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/adhocs/13773populationsbyindexofmultipledeprivationimddecileenglandandwales2020
+imd_pops <- read_csv("data/imd_popns.csv") %>% 
+  pivot_longer(cols = `0`:`90+`, names_to = "age", values_to = "popn")
+imd_pops[which(imd_pops$age == "90+"),"age"] <- "95"
+imd_pops$age <- as.numeric(imd_pops$age)
 
-# pivot_wider(names_from = GENDER, values_from = TOTAL_PATIENTS, names_prefix = "TOTAL_")
-  # 
-  # 
-  # 
-  # foidata<-foidata%>%
-  #   select(-PRACTICE_CODE,-TOTAL_PATIENTS)
-  # 
-  # final <- foidata %>%
-  #   group_by(quantile, GENDER, ANTIBIOTIC_GROUP)%>%
-  #   summarise(ITEMS = sum(ITEMS, na.rm = TRUE), .groups = "drop")
-  # 
-  # 
-  # total_patients_long <- total_patients_per_quantile %>%
-  #   pivot_longer(cols = starts_with("TOTAL_"), names_to = "GENDER", values_to = "TOTAL_PATIENTS") %>%
-  #   mutate(GENDER = ifelse(GENDER == "TOTAL_Female", "Female", "Male"))  # Standardize gender names
-  # 
-totals_gp_bysplit10 <- read_csv("data/cleaned_totals_gp_bysplit10_gender.csv")
+# Define age band breaks and labels
+breaks <- c(-Inf, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+labels <- c("0-5", "6-10", "11-20", "21-30", "31-40", 
+            "41-50", "51-60", "61-70", "71-80", "81-90", 
+            "91-100")
 
-final = data %>%
-  group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
+# Cut the ages into age bands
+imd_pops$age_band <- cut(imd_pops$age, breaks = breaks, labels = labels, right = TRUE)
+
+
+############## Overall ########################################################
+SWITCH_denominator <- "GP" #"IMD" #or "GP"
+
+if(SWITCH_denominator == "GP"){
+  deprivationpops = totals_gp_bysplit10 %>% group_by(split10, PRACTICE_CODE) %>%
+    summarise(tot = sum(total_population)) %>% ungroup() %>% group_by(split10) %>%
+    summarise(total_patients = sum(tot))
+}else{ # IMD 
+  deprivationpops = imd_pops %>% group_by(imd,) %>%
+    summarise(total_patients = sum(popn))
+  deprivationpops$split10 = paste0("Q",deprivationpops$imd)
+}
+
+data$split5 <- cut(
+  data$IMD,
+  breaks = quantile(data$IMD, probs = seq(0, 1, 0.2), na.rm = TRUE),
+  labels = c("Q1", "Q2", "Q3", "Q4", "Q5"),
+  include.lowest = TRUE
+)
+deprivationpops_5 <- as.data.frame(cbind(split5 = c("Q1", "Q2", "Q3", "Q4", "Q5"),
+                                         total_patients = matrix(0,5,1)))
+deprivationpops_5[which(deprivationpops_5$split5 == "Q1"),2] <- deprivationpops[which(deprivationpops$split10 == "Q1"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q2"),"total_patients"] 
+deprivationpops_5[which(deprivationpops_5$split5 == "Q2"),2] <- deprivationpops[which(deprivationpops$split10 == "Q3"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q4"),"total_patients"] 
+deprivationpops_5[which(deprivationpops_5$split5 == "Q3"),2] <- deprivationpops[which(deprivationpops$split10 == "Q5"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q6"),"total_patients"] 
+deprivationpops_5[which(deprivationpops_5$split5 == "Q4"),2] <- deprivationpops[which(deprivationpops$split10 == "Q7"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q8"),"total_patients"] 
+deprivationpops_5[which(deprivationpops_5$split5 == "Q5"),2] <- deprivationpops[which(deprivationpops$split10 == "Q9"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q10"),"total_patients"] 
+colnames(deprivationpops_5) <- c("split5","total_patients")
+deprivationpops_5$total_patients <- as.numeric(deprivationpops_5$total_patients)
+
+final_highlevel = data %>%
+  group_by(split5)%>%
   summarise(ITEMS = sum(ITEMS)) %>%
-  left_join(totals_gp_bysplit10) %>%
-  mutate(items_per_10000 = ITEMS / total_population * 10000)
+  left_join(deprivationpops_5) %>%
+  mutate(items_per_10000 = ITEMS / total_patients * 10000,
+         items_per_1000_pd = (ITEMS/365) /  (total_patients) * 1000) %>% ungroup()
+
+#final_highlevel$split10 <- factor(final_highlevel$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+final_highlevel$split5 <- factor(final_highlevel$split5, levels = c("Q1", "Q2", "Q3", "Q4", "Q5"))
+
+g1 <- ggplot(final_highlevel, aes(x=split5, y = items_per_1000_pd)) + #items_per_10000_imdpop_pd)) + #
+  geom_bar(stat="identity") + 
+  theme_minimal() + 
+  labs(x = "Quintile",
+       y = "Items per 1,000 Patients per day") #+ 
+g1
+# compare to box figure 3.4.1 from ESPAUR => get the same effect with IMD populations sizes but not GP registered denominator 
+
+############## By gender  ########################################################
+### If include gender how does it vary? 
+# population sizes
+if(SWITCH_denominator == "GP"){
+  totals_gp_bysplit10_sexgp <- read_csv("data/cleaned_totals_gp_bysplit10_sexgp.csv")
+  overall = data %>%
+    #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
+    group_by(split10, GENDER, PRACTICE_CODE) %>%
+    summarise(ITEMS =  sum(ITEMS)) %>%
+    left_join(totals_gp_bysplit10_sexgp) %>%
+    mutate(items_per_10000 = ITEMS / total_population * 10000)
+}else{# IMD
+  imd_pops_sex <- imd_pops %>% group_by(sex, imd) %>% summarise(total_population = sum(popn)) %>% rename(GENDER = sex)
+  imd_pops_sex$split10 = paste0("Q",imd_pops_sex$imd)
+  
+  overall = data %>%
+    #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
+    group_by(split10, GENDER) %>%
+    summarise(ITEMS =  sum(ITEMS)) %>% 
+    ungroup() %>% 
+    left_join(imd_pops_sex) %>%
+    mutate(items_per_10000 = ITEMS / total_population * 10000)
+  
+}
+
+overall$split10 <- factor(overall$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))#c("Q10", "Q9", "Q8", "Q7", "Q6", "Q5", "Q4", "Q3", "Q2", "Q1"))
+
+# Take mean 
+overall_mean <- overall %>% group_by(split10, GENDER) %>%
+  summarise(mean = mean(items_per_10000),
+            sd = sd(items_per_10000))
+## Mean over GP level per 10000 by gender
+ggplot(overall_mean, aes(x=split10, y = mean, group = GENDER)) + 
+  geom_line(aes(colour = GENDER)) + 
+  geom_errorbar(aes(ymin = mean-sd, ymax = mean+sd, group = GENDER, colour = GENDER)) + 
+  theme_minimal() + 
+  scale_y_continuous(lim = c(0,20000)) + 
+  labs(x = "Quintile",
+       y = "Items per 10,000 Patients per month",
+       linetype = "Gender") 
+
+
+ggplot(overall %>% filter(items_per_10000 < 20000), aes(x = split10, y = items_per_10000, colour = GENDER, group = GENDER)) + 
+  #  geom_jitter() + 
+  geom_boxplot(aes(group = interaction(GENDER,split10))) + 
+  #geom_line(aes(group = GENDER)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  # scale_y_continuous(lim = c(0,500)) + 
+  labs(x = "Quintile",
+       y = "Items per 10,000 Patients per month",
+       linetype = "Gender") + 
+  geom_line(data = overall_mean, aes(x=split10, y = mean, group = GENDER)) + 
+  scale_y_continuous(lim = c(0,20000))
+
+# Some big outliers - more in later quintiles (more deprived)
+overall %>% filter(items_per_10000 > 20000)
+# Y02751 also an outlier in Open Prescribing
+data %>% filter(PRACTICE_CODE == "Y02751") %>% filter(ITEMS > 0, AGE_BAND == "0-5") %>% dplyr::select(split10, PRACTICE_CODE,AGE_BAND, ITEMS, ANTIBIOTIC_GROUP)
+sub <- data %>% filter(PRACTICE_CODE %in% c("J82208", "Y02751","A81004")) # random Q7 practices and high one Y02751
+sub$AGE_BAND <- factor(sub$AGE_BAND, 
+                       levels = c("0-5", "6-10", "11-20", 
+                                  "21-30", "31-40", "41-50", 
+                                  "51-60", "61-70", "71-80", 
+                                  "81-90", "91-100"))
+ggplot(sub, aes(x=AGE_BAND, y = items_per_patient, group = interaction(PRACTICE_CODE, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE))) + 
+  geom_line(aes(col = PRACTICE_CODE)) + 
+  facet_wrap(~ANTIBIOTIC_GROUP) + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+sub <- data %>% filter(PRACTICE_CODE %in% c("J82208", "Y02751","A81004","Y02625","Y02494")) # random Q7 practices and high others
+sub <- sub %>% mutate(high = ifelse(PRACTICE_CODE %in% c("Y02751","Y02625","Y02494"),1,0))
+sub$AGE_BAND <- factor(sub$AGE_BAND, 
+                       levels = c("0-5", "6-10", "11-20", 
+                                  "21-30", "31-40", "41-50", 
+                                  "51-60", "61-70", "71-80", 
+                                  "81-90", "91-100"))
+ggplot(sub, aes(x=AGE_BAND, y = items_per_patient, group = interaction(PRACTICE_CODE, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE))) + 
+  geom_line(aes(col = factor(high))) + 
+  facet_wrap(~ANTIBIOTIC_GROUP) + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+sub %>% filter(high == 1) %>% dplyr::select(c(Area.Name, Parent.Name)) %>% group_by(Parent.Name) %>% slice(1)
+
+############## By gender and antibiotic group ############################
+if(SWITCH_denominator == "GP"){
+  final = data %>%
+    filter(!is.na(ANTIBIOTIC_GROUP)) %>% 
+    group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
+    summarise(ITEMS = sum(ITEMS)) %>%
+    left_join(totals_gp_bysplit10) %>%
+    mutate(items_per_1000 = (ITEMS/30) / total_population * 1000)
+}else{ #IMD
+  final = data %>%
+    filter(!is.na(ANTIBIOTIC_GROUP)) %>% 
+    group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
+    summarise(ITEMS = sum(ITEMS)) %>%
+    left_join(imd_pops_sex) %>%
+    mutate(items_per_1000 = (ITEMS/30) / total_population * 1000)
+}
 
 final$split10 <- factor(final$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
 
-g1 <- ggplot(final, aes(x = split10, y = items_per_10000, 
-                  color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), 
-                  linetype = GENDER)) +
+# colours
+turbo_colours <- c("#30123BFF", "#424AB3FF", "#467EF4FF", "#31AFF5FF", "#18DAC7FF", 
+                   "#38F491FF", "#83FF52FF", "#BDF534FF", "#E9D539FF", "#FEAA33FF", 
+                   "#F8721CFF", "#E03F08FF", "#B61C02FF","#808")
+
+final$ANTIBIOTIC_GROUP <- as.factor(final$ANTIBIOTIC_GROUP)
+final$GENDER <- as.factor(final$GENDER)
+g1 <- ggplot(final, aes(x = split10, y = items_per_1000, color = ANTIBIOTIC_GROUP, 
+                        group = interaction(GENDER,ANTIBIOTIC_GROUP), linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
   #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
   #           show.legend = FALSE) +
   labs(#title = "Antibiotic Usage Across Quintiles by Gender",
-       x = "Quintile",
-       y = "Items per 10,000 Patients",
-       color = "Antibiotic Group",
-       linetype = "Gender") +
+    x = "Quintile",
+    y = "Items per 1,000 Patients per day",
+    color = "Antibiotic Group",
+    linetype = "Gender") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   guides(col=guide_legend(ncol=2), linetype=guide_legend(ncol=2)) + 
-  scale_color_viridis_d(option = "turbo")
-
+  #scale_color_viridis_d(option = "turbo") 
+  scale_color_manual(values = turbo_colors) #viridis_d(option = "turbo") 
 ggsave("plots/figure2a.jpeg")
 
-g2 <- ggplot(final, aes(x = split10, y = items_per_10000, color = ANTIBIOTIC_GROUP, 
+
+ggplot(final, aes(x = split10, y = items_per_1000, color = ANTIBIOTIC_GROUP, 
                   group = interaction(GENDER, ANTIBIOTIC_GROUP), linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
   #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
   #           show.legend = FALSE) +
+  facet_wrap(~GENDER) +
   labs(#title = "Antibiotic Usage Across Quintiles by Gender zoomed",
-       x = "Quintile",
-       y = "Items per 10,000 Patients",
-       color = "Antibiotic Group",
-       linetype = "Gender") +
+    x = "Quintile",
+    y = "Items per 1,000 Patients per day",
+    color = "Antibiotic Group",
+    linetype = "Gender") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   guides(col=guide_legend(ncol=2), linetype=guide_legend(ncol=2)) + 
   scale_color_viridis_d(option = "turbo") +
-  ylim(0, 1200)
+  ylim(0, 5)
+
+g2 <- ggplot(final %>% filter(!ANTIBIOTIC_GROUP == "Penicillins"), 
+             aes(x = split10, y = items_per_1000, fill = ANTIBIOTIC_GROUP, 
+                 group = interaction(GENDER, ANTIBIOTIC_GROUP))) +
+  geom_area() + 
+  #geom_point(size = 2) +
+  # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
+  #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position as needed
+  #           show.legend = FALSE) +
+  facet_wrap(~GENDER) +
+  labs(#title = "Antibiotic Usage Across Quintiles by Gender zoomed",
+    x = "Quintile",
+    y = "Items per 1,000 Patients per day",
+    fill = "Antibiotic Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(col=guide_legend(ncol=2), linetype=guide_legend(ncol=2)) + 
+  #scale_color_viridis_d(option = "turbo")
+  scale_fill_manual(values = turbo_colors) #viridis_d(option = "turbo") 
 
 ggsave("plots/figure2b.jpeg")
 
 #### Age/sex distribution by quintile 
-totals_gp_bysplit10_as <- read_csv("data/cleaned_totals_gp_bysplit10_agesex.csv")
-totals_gp_bysplit10_as$split10 <- factor(totals_gp_bysplit10_as$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
-totals_gp_bysplit10_as <- as.data.frame(totals_gp_bysplit10_as)
+if(SWITCH_denominator == "GP"){
+  totals_gp_bysplit10_as <- read_csv("data/cleaned_totals_gp_bysplit10_agesex.csv")
+  totals_gp_bysplit10_as$split10 <- factor(totals_gp_bysplit10_as$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+  totals_gp_bysplit10_as <- as.data.frame(totals_gp_bysplit10_as)
+}else{#IMD
+  totals_imd_bysplit10_as <- imd_pops
+}
 
 # Visualise this
 ggplot(totals_gp_bysplit10_as, aes(x = factor(split10), y = total_population, fill = AGE_BAND)) +
@@ -208,20 +284,20 @@ ggplot(totals_gp_bysplit10_as, aes(x = factor(split10), y = total_population, fi
   facet_wrap(~GENDER)
 ggsave("plots/age_sex_split_by_IMD_numbers.jpeg")
 
-g3 <- ggplot(totals_gp_bysplit10_as, aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
+g3 <- ggplot(totals_gp_bysplit10_as %>% filter(split10 %in% c("Q1", "Q5", "Q10")), aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
   geom_bar(stat = "identity") +
-#  guides(fill=guide_legend(ncol=2)) + 
+  #  guides(fill=guide_legend(ncol=2)) + 
   labs(
     x = "Gender",
     y = "Population size"
   ) +
   scale_fill_discrete("Age Band") + 
   theme_minimal() + 
-  facet_wrap(~factor(split10), nrow = 2)
+  facet_wrap(~factor(split10), ncol = 3)
 
 ggsave("plots/figure2c.jpeg")
 
-g4 <- ggplot(totals_gp_bysplit10_as %>% filter(split10 %in% c("Q1", "Q10")), aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
+g4 <- ggplot(totals_gp_bysplit10_as %>% filter(split10 %in% c("Q1", "Q5", "Q10")), aes(x = GENDER, y = total_population, fill = AGE_BAND)) +
   geom_bar(stat = "identity", position = "fill") +
   #  guides(fill=guide_legend(ncol=2)) + 
   labs(
@@ -230,7 +306,7 @@ g4 <- ggplot(totals_gp_bysplit10_as %>% filter(split10 %in% c("Q1", "Q10")), aes
   ) +
   scale_fill_discrete("Age Band") + 
   theme_minimal() + 
-  facet_wrap(~factor(split10), ncol = 2)
+  facet_wrap(~factor(split10), ncol = 3)
 
 ggsave("plots/figure2d.jpeg")
 
@@ -238,17 +314,17 @@ ggsave("plots/figure2d.jpeg")
 age_sex_imd = data %>%
   group_by(split10, GENDER, AGE_BAND)%>%
   summarise(ITEMS = sum(ITEMS)) %>% 
-            #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
+  #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
   left_join(totals_gp_bysplit10_as) %>%
   mutate(items_per_10000 = ITEMS / total_population * 10000)
 
 age_sex_imd$split10 <- factor(age_sex_imd$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
 
 age_sex_imd$AGE_BAND <- factor(age_sex_imd$AGE_BAND, 
-                                    levels = c("0-5", "6-10", "11-20", 
-                                               "21-30", "31-40", "41-50", 
-                                               "51-60", "61-70", "71-80", 
-                                               "81-90", "91-100"))
+                               levels = c("0-5", "6-10", "11-20", 
+                                          "21-30", "31-40", "41-50", 
+                                          "51-60", "61-70", "71-80", 
+                                          "81-90", "91-100"))
 
 
 ggplot(age_sex_imd, aes(x = factor(split10), y = items_per_10000, fill = AGE_BAND)) +
@@ -289,8 +365,8 @@ ggplot(age_sex_imd, aes(x = factor(split10), y = items_per_10000, fill = AGE_BAN
   facet_grid(ANTIBIOTIC_GROUP~GENDER)
 
 ggplot(age_sex_imd, aes(x = split10, y = items_per_10000, 
-                  color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), 
-                  linetype = GENDER)) +
+                        color = ANTIBIOTIC_GROUP, group = interaction(GENDER, ANTIBIOTIC_GROUP), 
+                        linetype = GENDER)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
@@ -298,7 +374,7 @@ ggplot(age_sex_imd, aes(x = split10, y = items_per_10000,
   #           show.legend = FALSE) +
   labs(#title = "Antibiotic Usage Across Quintiles by Gender",
     x = "Quintile",
-    y = "Items per 10,000 Patients",
+    y = "Items per 10,000 Patients per month",
     color = "Antibiotic Group",
     linetype = "Gender") +
   theme_minimal() +
@@ -308,7 +384,7 @@ ggplot(age_sex_imd, aes(x = split10, y = items_per_10000,
 
 #### Join most useful together
 library(patchwork) 
-(g1 + g2 + plot_layout(guides = "collect", widths = c(2,2))) / (g3 + g4 + plot_layout(guides = "collect", widths = c(3,1))) & plot_annotation(tag_levels = 'A')
+(g1 + g2 + plot_layout(guides = "collect", widths = c(2,2))) / (g3 + g4 + plot_layout(guides = "collect", widths = c(2,2))) & plot_annotation(tag_levels = 'A')
 ggsave("plots/figure2.jpeg", width = 12, height = 8)
 
 
@@ -323,10 +399,10 @@ data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
 # No... 
 # Does a certain age group get more penicillins? 
 data$AGE_BAND <- factor(data$AGE_BAND, 
-                               levels = c("0-5", "6-10", "11-20", 
-                                          "21-30", "31-40", "41-50", 
-                                          "51-60", "61-70", "71-80", 
-                                          "81-90", "91-100"))
+                        levels = c("0-5", "6-10", "11-20", 
+                                   "21-30", "31-40", "41-50", 
+                                   "51-60", "61-70", "71-80", 
+                                   "81-90", "91-100"))
 totals_age <- totals_gp_bysplit10_as %>%
   group_by(AGE_BAND) %>%
   summarise(total = sum(total_population))
@@ -337,10 +413,10 @@ pen_age <- data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
   mutate(items_per_10000 = (total_items / total)*10000) %>%
   arrange(items_per_10000)
 pen_age$AGE_BAND <- factor(pen_age$AGE_BAND, 
-                        levels = c("0-5", "6-10", "11-20", 
-                                   "21-30", "31-40", "41-50", 
-                                   "51-60", "61-70", "71-80", 
-                                   "81-90", "91-100"))
+                           levels = c("0-5", "6-10", "11-20", 
+                                      "21-30", "31-40", "41-50", 
+                                      "51-60", "61-70", "71-80", 
+                                      "81-90", "91-100"))
 
 
 ggplot(pen_age, aes(x=AGE_BAND, y = items_per_10000)) + 
