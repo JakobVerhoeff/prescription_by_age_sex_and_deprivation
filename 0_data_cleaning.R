@@ -33,28 +33,69 @@ foidata_orig<-read.csv("data/foi02243_practice_2022_2023.csv") %>%
   ) 
 
 # New dataset 
-foidata_clean <- foidata_orig
+foidata_cleanish <- foidata_orig
 
 ##########################################
 ##### FILTER REDACTED ####################
 ##########################################
-foidata_clean$ITEMS<-as.numeric(foidata_clean$ITEMS) # Use items not patient number 
-sum(foidata_clean$ITEMS)
-length(which(is.na(foidata_clean$ITEMS))) # 1362827
-100 * length(which(is.na(foidata_clean$ITEMS)))/dim(foidata_orig)[1]  # 52.4%
+foidata_cleanish$ITEMS<-as.numeric(foidata_cleanish$ITEMS) # Use items not patient number 
+sum(foidata_cleanish$ITEMS)
+length(which(is.na(foidata_cleanish$ITEMS))) # 1362827
+100 * length(which(is.na(foidata_cleanish$ITEMS)))/dim(foidata_orig)[1]  # 52.4%
 
-foi1 <- foidata_clean
+foi1 <- foidata_cleanish
 foi1$ITEMS[is.na(foi1$ITEMS)] <- 1 # I convert the NA's into 1's. ##### ASSUMPTION! ####
 
-100 * length(which(is.na(foidata_clean$ITEMS))) / sum(foi1$ITEMS) # 4.5% 
+100 * length(which(is.na(foidata_cleanish$ITEMS))) / sum(foi1$ITEMS) # 4.5% 
 
-foi4 <- foidata_clean
+foi4 <- foidata_cleanish
 foi4$ITEMS[is.na(foi4$ITEMS)] <- 4 # convert the NA's into 4's. ##### ASSUMPTION! ####
-100 * (4*length(which(is.na(foidata_clean$ITEMS)))) / sum(foi1$ITEMS) # 17.8% 
+100 * (4*length(which(is.na(foidata_cleanish$ITEMS)))) / sum(foi1$ITEMS) # 17.8% 
 
 ##### Set NAs to 1 for ITEMS for now 
-foidata_clean <- foi1 %>%
+foidata_cleanish <- foi1 %>%
   mutate(ITEMS4 = ifelse(ITEMS == 1, 4,ITEMS))
+
+##########################################
+##### MULTIPLE LINES #####################
+##########################################
+
+# Are there any multiple lines of data? e.g.
+foidata_cleanish %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40")
+# how many? 
+multiple_lines <- foidata_cleanish %>%
+  group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
+  #filter(UNIQUE_PATIENT_COUNT != '*') %>% 
+  filter(n_distinct(ITEMS) > 1) %>%
+  arrange(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND)
+
+unique(multiple_lines$BNF_CHEMICAL_SUBSTANCE_CODE) # about half of abx types 
+
+foidata_clean_nomultiples <- foidata_cleanish %>% 
+  group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
+  summarise(TOTAL_ITEMS = sum(ITEMS, na.rm = TRUE), TOTAL_ITEMS4 = sum(ITEMS4, na.rm = TRUE),
+            .groups = "drop") 
+
+multiple_lines2 <- foidata_clean_nomultiples %>%
+  group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
+  #filter(UNIQUE_PATIENT_COUNT != '*') %>% 
+  filter(n_distinct(TOTAL_ITEMS) > 1) %>%
+  arrange(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND)
+multiple_lines2 # should be empty i.e. there aren't any
+# issue now gone
+foidata_clean_nomultiples %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40")
+
+### 
+foidata_clean <- foidata_clean_nomultiples %>%
+  rename(ITEMS = TOTAL_ITEMS, ITEMS4 = TOTAL_ITEMS4)
+
+# Check no ITEMS lost: both have 30465527 - yes. 
+sum(foidata_clean$ITEMS)
+f <- foidata_cleanish %>% filter(ITEMS !='*') 
+f$ITEMS <- as.numeric(f$ITEMS)
+sum(f$ITEMS)
+
+
 
 ##########################################
 ##### FILTER AGE/SEX ####################
@@ -93,6 +134,7 @@ dim(foi_as)[1]
 ###########################################################
 ### EDIT DEPRIVATION DATA #################################
 ###########################################################
+## Only have IMD for 2019 - may lose some GP practices thru this?
 deprivationdata<-read.csv("data/deprivation_data.csv")%>%
   dplyr::select(-Sex,-Age,-Category,-Category.Type,-Lower.CI.95.0.limit,-Time.period.range,-Compared.to.goal,-New.data,-Time.period.Sortable,-Compared.to.ICB.sub.locations.value.or.percentiles,-Compared.to.England.value.or.percentiles,-Recent.Trend,-Value.note,-Denominator,-Count,-Upper.CI.99.8.limit,-Lower.CI.99.8.limit,-Upper.CI.95.0.limit,-Lower.CI.95.0.limit,-Indicator.ID,-Indicator.Name)
 deprivationdata<-subset(deprivationdata, Time.period == "2019") # Select IMD2019
@@ -114,7 +156,8 @@ deprivationdata$split10 <- cut(
 )
 
 # Number of GP populations
-length(unique(deprivationdata$PRACTICE_CODE)) # 6239
+#6315 in all years deprivation data 
+length(unique(deprivationdata$PRACTICE_CODE)) # 6239 
 range(deprivationdata$Value)
 
 ##########################################
@@ -123,6 +166,9 @@ range(deprivationdata$Value)
 gpdatamale<-read.csv("data/gp-reg-pat-prac-sing-age-male.csv") #As of april 2022.
 gpdatafemale<-read.csv("data/gp-reg-pat-prac-sing-age-female (1).csv") #As of april 2022
 # chose this date because foidata also starts from april 2022
+length(unique(gpdatafemale$ORG_CODE)) # 6518 
+# Should be 7,079 in 2022
+# https://www.statista.com/statistics/996600/gp-practices-in-england/
 
 
 
@@ -217,7 +263,7 @@ foidata <- merge(foi_as, deprivationdata[, c("PRACTICE_CODE", "Value","quintile"
 # doesn't remove those with no deprivation data 
 
 foidata<- foidata %>% 
-  dplyr::select(-UNIQUE_PATIENT_COUNT,
+  dplyr::select(#-UNIQUE_PATIENT_COUNT,
                 -FINANCIAL_YEAR) # remove those things we won't use
 
 # combine with population data 
@@ -232,16 +278,23 @@ length(unique(foi_as$PRACTICE_CODE))
 length(unique(deprivationdata$PRACTICE_CODE))
 length(unique(gpdata_combined$PRACTICE_CODE))
 
-# What % of patients removed if no IMD? 
+# What % of patients removed if no IMD? 1.6% 
 100 * foidata %>% filter(is.na(IMD)) %>% summarise(sum(total_patients,na.rm = TRUE)) / sum(foidata$total_patients, na.rm = TRUE)
-# What % of gp practices had no data on patient numbers? 
-length(unique(foidata %>% filter(is.na(total_patients)))) 
+# What % of gp practices had no data on patient numbers but HAD IMD data: NONE
+unique(foidata %>% filter(!is.na(IMD)) %>% filter(is.na(total_patients)) %>% select(PRACTICE_CODE))
 
 # Range of GP practice data
 foidata %>% filter(!is.na(IMD), !is.na(total_patients)) %>% 
   group_by(PRACTICE_CODE) %>%
-  summarise(total = sum(total_patients)) %>%
-  summarise(range(total))
+  dplyr::summarise(total = sum(total_patients)) %>%
+  dplyr::reframe(range(total))
+
+# GP practice data population in each IMD
+foidata %>% filter(!is.na(IMD), !is.na(total_patients)) %>% 
+  group_by(quintile) %>%
+  dplyr::summarise(total = sum(total_patients)) 
+
+
 
 # Percentage women of GP practice data
 foidata %>% filter(!is.na(IMD), !is.na(total_patients)) %>% 
@@ -312,7 +365,7 @@ foidata_combined$AGE_BAND <- factor(foidata_combined$AGE_BAND,
 # If no patients registered in that age group must be registered error? 
 f <- foidata_combined %>% filter(total_patients == 0) %>% summarise(IT = unique(ITEMS))
 unique(f$IT)
-sum(f$IT) # only 982 items
+sum(f$IT) # only 312 items
 
 # Filter out missing values
 foidata_filtered <- foidata_combined %>%
@@ -379,18 +432,52 @@ write_csv(totals_gp_bysplit10_agesex, "data/cleaned_totals_gp_bysplit10_agesex.c
 sum(totals_gp_bysplit10_gender$total_population) 
 sum(totals_gp_bysplit10_agesex$total_population) 
 
+totals_gp_bysplit10_sexgp <- totals_gp_bysplit10 %>% 
+  group_by(GENDER, PRACTICE_CODE, split10) %>%
+  summarise(total_population = sum(total_patients))
+write_csv(totals_gp_bysplit10_sexgp, "data/cleaned_totals_gp_bysplit10_sexgp.csv")
+sum(totals_gp_bysplit10_sexgp$total_population) 
+sum(totals_gp_bysplit10_agesex$total_population) 
 
-### Need to include those ages with no prescribing
+
+### Need to include those ages with no prescribing: 0s! 
 full_grid <- foidata_filtered %>% 
-  complete(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, fill = list(ITEMS = 0, ITEMS4 = 0)) %>%
-  left_join(gpdata_combined,by = c("PRACTICE_CODE", "AGE_BAND", "GENDER"))
+  dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE) %>%
+  complete(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE) %>% # need to add in all the age and genders possible
+  left_join(gpdata_combined,by = c("PRACTICE_CODE", "AGE_BAND", "GENDER")) %>%
+  left_join(deprivationdata) %>%
+  left_join(foidata_filtered[,c("PRACTICE_CODE", "BNF_CHEMICAL_SUBSTANCE_CODE", "GENDER", "AGE_BAND", 
+                                "ITEMS", "ITEMS4",  
+                                "items_per_patient", "items_per_patient_na4", "ANTIBIOTIC_GROUP"
+  )]) %>%
+  rename(IMD = Value)
 
-##### TO DO ADD IN ZERO ITEMS!!! 
+# If no patients then can remove 
+w <- which(full_grid$total_patients ==0)
+
+full_grid <- full_grid %>% filter(total_patients > 0)
+
+# Some still NA: those that have 0 use of this antibiotic 
+full_grid %>% dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS, total_patients, items_per_patient)
+w <- which(is.na(full_grid$ITEMS))
+full_grid[w, c("ITEMS", "ITEMS4", "items_per_patient", "items_per_patient_na4")] <- 0
+
+full_grid %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", 
+                     BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40") %>%
+   dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS, total_patients, items_per_patient)
+
+foidata_filtered %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", 
+                                      BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40") 
+#bigger as 0s in rows now 
+dim(foidata_filtered)
+dim(full_grid) 
+# but same number of items prescribed
+sum(foidata_filtered$ITEMS)
+sum(full_grid$ITEMS)
+
 
 
 ###### Save cleaned data with all information 
 ## 
-write_csv(foidata_filtered, "data/cleaned_combined_data.csv")
-
-colnames(foidata_filtered)
+write_csv(full_grid, "data/cleaned_combined_data.csv")
 
