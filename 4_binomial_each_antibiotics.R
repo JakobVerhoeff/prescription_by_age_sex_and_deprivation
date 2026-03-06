@@ -57,16 +57,16 @@ for(i in u){
   print(i)
   
   # All model with build up of age, sex, deprivation up to those with age-sex interaction term and age^2
-  nb_s<-glm.nb(ITEMS ~  GENDER + offset(log(total_patients)), data = data_foi)
-  nb_a<-glm.nb(ITEMS ~  AGE_BAND_NUM + offset(log(total_patients)), data = data_foi)
-  nb_d<-glm.nb(ITEMS ~  IMD + offset(log(total_patients)), data = data_foi)
-  nb_sa<-glm.nb(ITEMS ~  AGE_BAND_NUM + GENDER + offset(log(total_patients)), data = data_foi)
-  nb_sd<-glm.nb(ITEMS ~  GENDER + IMD + offset(log(total_patients)), data = data_foi)
-  nb_ad<-glm.nb(ITEMS ~  AGE_BAND_NUM + IMD + offset(log(total_patients)), data = data_foi)
-  nb_asd<-glm.nb(ITEMS ~  AGE_BAND_NUM + IMD + GENDER + offset(log(total_patients)), data = data_foi)
-  nb_asda2<-glm.nb(ITEMS ~  AGE_BAND_NUM + AGE_BAND_NUM2 + IMD + GENDER + offset(log(total_patients)), data = data_foi)
-  nb_asa2i<-glm.nb(ITEMS ~  AGE_BAND_NUM + AGE_BAND_NUM2 + GENDER + AGE_BAND_NUM:GENDER + offset(log(total_patients)), data = data_foi)
-  nb_all<-glm.nb(ITEMS ~  AGE_BAND_NUM + AGE_BAND_NUM2 + IMD + GENDER + AGE_BAND_NUM:GENDER + offset(log(total_patients)), data = data_foi)
+  nb_s<-glm.nb(ITEMS_1 ~  GENDER + offset(log(total_patients)), data = data_foi)
+  nb_a<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + offset(log(total_patients)), data = data_foi)
+  nb_d<-glm.nb(ITEMS_1 ~  IMD + offset(log(total_patients)), data = data_foi)
+  nb_sa<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + GENDER + offset(log(total_patients)), data = data_foi)
+  nb_sd<-glm.nb(ITEMS_1 ~  GENDER + IMD + offset(log(total_patients)), data = data_foi)
+  nb_ad<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + IMD + offset(log(total_patients)), data = data_foi)
+  nb_asd<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + IMD + GENDER + offset(log(total_patients)), data = data_foi)
+  nb_asda2<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + AGE_BAND_NUM2 + IMD + GENDER + offset(log(total_patients)), data = data_foi)
+  nb_asa2i<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + AGE_BAND_NUM2 + GENDER + AGE_BAND_NUM:GENDER + offset(log(total_patients)), data = data_foi)
+  nb_all<-glm.nb(ITEMS_1 ~  AGE_BAND_NUM + AGE_BAND_NUM2 + IMD + GENDER + AGE_BAND_NUM:GENDER + offset(log(total_patients)), data = data_foi)
   
   zinb_model <- glmmTMB(TOTAL_ITEMS ~ AGE_BAND_NUM + AGE_BAND_NUM2 + IMD + GENDER + AGE_BAND_NUM:GENDER + offset(log(TOTAL_PATIENTS)),
     ziformula = ~1,   # simple model for zero-inflation part (only intercept)
@@ -118,7 +118,7 @@ for(i in u){
   predicted_values <- predict(nb_all, type = "response")
   # Create a data frame with actual and predicted values
   plot_data <- data.frame(
-    Actual = data_foi$ITEMS,
+    Actual = data_foi$ITEMS_1,
     Predicted = predicted_values
   )
   

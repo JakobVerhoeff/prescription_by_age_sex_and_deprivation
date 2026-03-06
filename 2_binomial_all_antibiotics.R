@@ -258,6 +258,10 @@ data.frame(
              logLik(zinbg_model))
 )
 
+## only one line per practice? 
+anyDuplicated(data_diab_copd$PRACTICE_CODE)
+
+
 #### What about comorbidities? 
 data_diab_copd <- read_csv("data/PREVALENCE_1920.csv") %>%
   filter(GROUP_CODE %in% c("COPD", "DM")) %>% # get COPD and Diabetes
