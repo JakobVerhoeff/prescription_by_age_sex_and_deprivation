@@ -43,18 +43,23 @@ sum(foidata_cleanish$ITEMS)
 length(which(is.na(foidata_cleanish$ITEMS))) # 1362827
 100 * length(which(is.na(foidata_cleanish$ITEMS)))/dim(foidata_orig)[1]  # 52.4%
 
-foi1 <- foidata_cleanish
-foi1$ITEMS[is.na(foi1$ITEMS)] <- 1 # I convert the NA's into 1's. ##### ASSUMPTION! ####
+foidata_cleanish <- foidata_cleanish %>%
+  mutate(
+    ITEMS_num = suppressWarnings(as.numeric(ITEMS)),
+    was_redacted = is.na(ITEMS_num),
+    ITEMS_1 = if_else(was_redacted, 1, ITEMS_num),
+    ITEMS_4 = if_else(was_redacted, 4, ITEMS_num)
+  )
 
-100 * length(which(is.na(foidata_cleanish$ITEMS))) / sum(foi1$ITEMS) # 4.5% 
+foi1 <- foidata_cleanish
+
+
+100 * sum(foidata_cleanish$was_redacted) / nrow(foidata_cleanish)
+100 * sum(foidata_cleanish$was_redacted) / sum(foidata_cleanish$ITEMS_1)# 4.5% 
+100 * (4 * sum(foidata_cleanish$was_redacted)) / sum(foidata_cleanish$ITEMS_1)
 
 foi4 <- foidata_cleanish
-foi4$ITEMS[is.na(foi4$ITEMS)] <- 4 # convert the NA's into 4's. ##### ASSUMPTION! ####
-100 * (4*length(which(is.na(foidata_cleanish$ITEMS)))) / sum(foi1$ITEMS) # 17.8% 
-
-##### Set NAs to 1 for ITEMS for now 
-foidata_cleanish <- foi1 %>%
-  mutate(ITEMS4 = ifelse(ITEMS == 1, 4,ITEMS))
+100 * (4*length(which(is.na(foidata_cleanish$ITEMS_1)))) / sum(foi1$ITEMS_1) # 17.8% 
 
 ##########################################
 ##### MULTIPLE LINES #####################
@@ -66,15 +71,18 @@ foidata_cleanish %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", BNF_C
 multiple_lines <- foidata_cleanish %>%
   group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
   #filter(UNIQUE_PATIENT_COUNT != '*') %>% 
-  filter(n_distinct(ITEMS) > 1) %>%
+  filter(n_distinct(ITEMS_1) > 1) %>%
   arrange(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND)
 
 unique(multiple_lines$BNF_CHEMICAL_SUBSTANCE_CODE) # about half of abx types 
 
 foidata_clean_nomultiples <- foidata_cleanish %>% 
   group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
-  summarise(TOTAL_ITEMS = sum(ITEMS, na.rm = TRUE), TOTAL_ITEMS4 = sum(ITEMS4, na.rm = TRUE),
-            .groups = "drop") 
+  summarise(
+    TOTAL_ITEMS  = sum(ITEMS_1, na.rm = TRUE),
+    TOTAL_ITEMS4 = sum(ITEMS_4, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 multiple_lines2 <- foidata_clean_nomultiples %>%
   group_by(FINANCIAL_YEAR, PRACTICE_CODE, BNF_CHEMICAL_SUBSTANCE_CODE, GENDER, AGE_BAND) %>%
@@ -87,13 +95,11 @@ foidata_clean_nomultiples %>% filter(PRACTICE_CODE == "A81005", GENDER == "Femal
 
 ### 
 foidata_clean <- foidata_clean_nomultiples %>%
-  rename(ITEMS = TOTAL_ITEMS, ITEMS4 = TOTAL_ITEMS4)
+  rename(ITEMS_1 = TOTAL_ITEMS, ITEMS_4 = TOTAL_ITEMS4)
 
 # Check no ITEMS lost: both have 30465527 - yes. 
-sum(foidata_clean$ITEMS)
-f <- foidata_cleanish %>% filter(ITEMS !='*') 
-f$ITEMS <- as.numeric(f$ITEMS)
-sum(f$ITEMS)
+sum(foidata_clean$ITEMS_1)
+sum(foidata_cleanish$ITEMS_1, na.rm = TRUE)
 
 
 
@@ -101,24 +107,19 @@ sum(f$ITEMS)
 ##### FILTER AGE/SEX ####################
 ##########################################
 ### Clean ages ########################
-foidata_clean_age <- foidata_clean %>% filter(!AGE_BAND=="Unknown")  # Remove rows with excluded ages
+foidata_clean_age <- foidata_clean %>%
+  filter(!AGE_BAND %in% c("Unknown", "over 100"))  # Remove rows with excluded ages
 dim(foidata_clean)[1] - dim(foidata_clean_age)[1] # 60451
 100 * (dim(foidata_clean)[1] - dim(foidata_clean_age)[1])/dim(foidata_clean)[1] # 2% of rows 
-sum(foidata_clean$ITEMS) - sum(foidata_clean_age$ITEMS)
-100 * (sum(foidata_clean$ITEMS) - sum(foidata_clean_age$ITEMS)) / sum(foidata_clean$ITEMS) # < 1% of items
-
-foidata_clean_age <- foidata_clean %>% filter(!AGE_BAND == "over 100")  # Remove rows with excluded ages
-dim(foidata_clean)[1] - dim(foidata_clean_age)[1] # 10600
-100 * (dim(foidata_clean)[1] - dim(foidata_clean_age)[1])/dim(foidata_clean)[1] # 0.4% of rows
-sum(foidata_clean$ITEMS) - sum(foidata_clean_age$ITEMS)
-100 * (sum(foidata_clean$ITEMS) - sum(foidata_clean_age$ITEMS)) / sum(foidata_clean$ITEMS) # < 0.05% of items
+sum(foidata_clean$ITEMS_1) - sum(foidata_clean_age$ITEMS_1)
+100 * (sum(foidata_clean$ITEMS_1) - sum(foidata_clean_age$ITEMS_1)) / sum(foidata_clean$ITEMS_1) # < 1% of items
 
 ### Clean sex ########################
 foidata_clean_sex <- foidata_clean[foidata_clean$GENDER %in% c("Male", "Female"), ] # remove those with no gender
 dim(foidata_clean)[1] - dim(foidata_clean_sex)[1] # 119028
 100 * (dim(foidata_clean)[1] - dim(foidata_clean_sex)[1])/dim(foidata_clean)[1] # 5% of rows 
-sum(foidata_clean$ITEMS) - sum(foidata_clean_sex$ITEMS)
-100 * (sum(foidata_clean$ITEMS) - sum(foidata_clean_sex$ITEMS)) / sum(foidata_clean$ITEMS) # < 1% of items
+sum(foidata_clean$ITEMS_1) - sum(foidata_clean_sex$ITEMS_1)
+100 * (sum(foidata_clean$ITEMS_1) - sum(foidata_clean_sex$ITEMS_1)) / sum(foidata_clean$ITEMS_1) # < 1% of items
 
 
 #### Include all of these cleaning steps ########
@@ -129,7 +130,7 @@ foi_as <- foidata_clean %>%
 
 dim(foi_as)[1]
 100 * (dim(foidata_clean)[1] - dim(foi_as)[1]) / dim(foidata_clean)[1] # 5% smaller 
-100 * (sum(foidata_clean$ITEMS) - sum(foi_as$ITEMS)) / sum(foidata_clean$ITEMS) # 1.13% of items
+100 * (sum(foidata_clean$ITEMS_1) - sum(foi_as$ITEMS_1)) / sum(foidata_clean$ITEMS_1) # 1.13% of items
 
 ###########################################################
 ### EDIT DEPRIVATION DATA #################################
@@ -250,7 +251,7 @@ gpdata_combined <- gpdata_combined %>%
 56230100 - sum(gpdata_combined$total_patients)
 100 * sum(gpdata_combined$total_patients)/56230100
 100*(56230100 - sum(gpdata_combined$total_patients))/56230100
-# 10% more in the data than in the England population... some registered twice? 
+# 9.4% more in the data than in the England population... some registered twice? 
 
 
 
@@ -279,7 +280,12 @@ length(unique(deprivationdata$PRACTICE_CODE))
 length(unique(gpdata_combined$PRACTICE_CODE))
 
 # What % of patients removed if no IMD? 1.6% 
-100 * foidata %>% filter(is.na(IMD)) %>% summarise(sum(total_patients,na.rm = TRUE)) / sum(foidata$total_patients, na.rm = TRUE)
+100 * (
+  foidata %>%
+    filter(is.na(IMD)) %>%
+    summarise(x = sum(total_patients, na.rm = TRUE)) %>%
+    pull(x)
+) / sum(foidata$total_patients, na.rm = TRUE)
 # What % of gp practices had no data on patient numbers but HAD IMD data: NONE
 unique(foidata %>% filter(!is.na(IMD)) %>% filter(is.na(total_patients)) %>% select(PRACTICE_CODE))
 
@@ -308,8 +314,8 @@ foidata %>% filter(!is.na(IMD), !is.na(total_patients)) %>%
 
 ##### make items per patient column
 foidata <- foidata %>%
-  mutate(items_per_patient = ITEMS / total_patients,
-         items_per_patient_na4 = ITEMS4 / total_patients)
+  mutate(items_per_patient = ITEMS_1 / total_patients,
+         items_per_patient_na4 = ITEMS_4 / total_patients)
 
 
 ###########################################################
@@ -363,9 +369,12 @@ foidata_combined$AGE_BAND <- factor(foidata_combined$AGE_BAND,
 
 #### Filter out missing data? 
 # If no patients registered in that age group must be registered error? 
-f <- foidata_combined %>% filter(total_patients == 0) %>% summarise(IT = unique(ITEMS))
-unique(f$IT)
-sum(f$IT) # only 312 items
+f <- foidata_combined %>%
+  filter(total_patients == 0) %>%
+  distinct(ITEMS_1)
+
+unique(f$ITEMS_1)
+sum(f$ITEMS_1)  # only 312 items
 
 # Filter out missing values
 foidata_filtered <- foidata_combined %>%
@@ -376,23 +385,23 @@ dim(foidata_filtered)[1] - dim(foidata_combined)[1]
 
 # How many removed? 
 100 * (dim(foidata_orig)[1] - dim(foidata_filtered)[1]) / dim(foidata_orig)[1]
-sum(foidata_filtered$ITEMS)[1] # how many items?
-100 - 100 * (sum(foidata_clean$ITEMS)[1] - sum(foidata_filtered$ITEMS)[1]) / sum(foidata_clean$ITEMS)[1]
+sum(foidata_filtered$ITEMS_1)[1] # how many items?
+100 - 100 * (sum(foidata_clean$ITEMS_1)[1] - sum(foidata_filtered$ITEMS_1)[1]) / sum(foidata_clean$ITEMS_1)[1]
 
 # Average per person? 
 summary(foidata_filtered$items_per_patient)
-100 * sum(foidata_filtered$ITEMS)/sum(foidata_filtered$total_patients)
+100 * sum(foidata_filtered$ITEMS_1)/sum(foidata_filtered$total_patients)
 
 # Most commonly prescribed? 
 foidata_filtered %>% group_by(ANTIBIOTIC_GROUP) %>%
-  summarise(total = sum(ITEMS),
-            perc = 100 * total/sum(foidata_filtered$ITEMS)) %>%
+  summarise(total = sum(ITEMS_1),
+            perc = 100 * total/sum(foidata_filtered$ITEMS_1)) %>%
   arrange(perc)
 
 # Age group most prescribed to? 
 fa <- foidata_filtered %>% group_by(AGE_BAND) %>%
-  summarise(total = sum(ITEMS),
-            perc = 100 * total/sum(foidata_filtered$ITEMS)) %>%
+  summarise(total = sum(ITEMS_1),
+            perc = 100 * total/sum(foidata_filtered$ITEMS_1)) %>%
   arrange(perc)
 fa
 # Under 10
@@ -403,8 +412,8 @@ fa %>% filter(AGE_BAND %in% c("71-80","81-90","91-100")) %>% summarise(sum(perc)
 
 # Gender
 foidata_filtered %>% group_by(GENDER) %>%
-  summarise(total = sum(ITEMS),
-            perc = 100 * total/sum(foidata_filtered$ITEMS)) %>%
+  summarise(total = sum(ITEMS_1),
+            perc = 100 * total/sum(foidata_filtered$ITEMS_1)) %>%
   arrange(perc)
 
 ## check population sizes 
@@ -413,7 +422,9 @@ foidata_filtered %>% filter(PRACTICE_CODE == "A81001",
                             AGE_BAND == "6-10") # should all have same population size
 
 ####### Save some population totals for the GPs in final data
-totals_gp_bysplit10 <- left_join(gpdata_combined, deprivationdata) %>%
+totals_gp_bysplit10 <- left_join(gpdata_combined, 
+                                 deprivationdata %>% 
+                                   select(PRACTICE_CODE, Value, quintile, split10),by = "PRACTICE_CODE") %>%
   filter(PRACTICE_CODE %in% foidata_filtered$PRACTICE_CODE)
 sum(gpdata_combined$total_patients) # All 
 sum(totals_gp_bysplit10$total_patients) # Only those in foidata_filtered
@@ -441,15 +452,17 @@ sum(totals_gp_bysplit10_agesex$total_population)
 
 
 ### Need to include those ages with no prescribing: 0s! 
+### Is this complete ok? what does it do? 
 full_grid <- foidata_filtered %>% 
   dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE) %>%
   complete(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE) %>% # need to add in all the age and genders possible
   left_join(gpdata_combined,by = c("PRACTICE_CODE", "AGE_BAND", "GENDER")) %>%
-  left_join(deprivationdata) %>%
-  left_join(foidata_filtered[,c("PRACTICE_CODE", "BNF_CHEMICAL_SUBSTANCE_CODE", "GENDER", "AGE_BAND", 
-                                "ITEMS", "ITEMS4",  
-                                "items_per_patient", "items_per_patient_na4", "ANTIBIOTIC_GROUP"
-  )]) %>%
+  left_join(deprivationdata %>% select(PRACTICE_CODE, Value, quintile, split10), by = "PRACTICE_CODE") %>%
+  left_join(
+    foidata_filtered[, c("PRACTICE_CODE", "BNF_CHEMICAL_SUBSTANCE_CODE", "GENDER", "AGE_BAND",
+                         "ITEMS_1", "ITEMS_4", "items_per_patient", 
+                         "items_per_patient_na4", "ANTIBIOTIC_GROUP")],
+    by = c("PRACTICE_CODE", "BNF_CHEMICAL_SUBSTANCE_CODE", "GENDER", "AGE_BAND")) %>%
   rename(IMD = Value)
 
 # If no patients then can remove 
@@ -458,13 +471,13 @@ w <- which(full_grid$total_patients ==0)
 full_grid <- full_grid %>% filter(total_patients > 0)
 
 # Some still NA: those that have 0 use of this antibiotic 
-full_grid %>% dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS, total_patients, items_per_patient)
-w <- which(is.na(full_grid$ITEMS))
-full_grid[w, c("ITEMS", "ITEMS4", "items_per_patient", "items_per_patient_na4")] <- 0
+full_grid %>% dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS_1, total_patients, items_per_patient)
+w <- which(is.na(full_grid$ITEMS_1))
+full_grid[w, c("ITEMS_1", "ITEMS_4", "items_per_patient", "items_per_patient_na4")] <- 0
 
 full_grid %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", 
                      BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40") %>%
-   dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS, total_patients, items_per_patient)
+   dplyr::select(PRACTICE_CODE, AGE_BAND, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE, ITEMS_1, total_patients, items_per_patient)
 
 foidata_filtered %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female", 
                                       BNF_CHEMICAL_SUBSTANCE_CODE == "0501012G0", AGE_BAND == "31-40") 
@@ -472,8 +485,8 @@ foidata_filtered %>% filter(PRACTICE_CODE == "A81005", GENDER == "Female",
 dim(foidata_filtered)
 dim(full_grid) 
 # but same number of items prescribed
-sum(foidata_filtered$ITEMS)
-sum(full_grid$ITEMS)
+sum(foidata_filtered$ITEMS_1)
+sum(full_grid$ITEMS_1)
 
 
 
