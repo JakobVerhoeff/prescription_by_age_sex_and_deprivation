@@ -22,12 +22,23 @@ data <- read_csv("data/cleaned_combined_data.csv")
 
 
 # For all antibiotics
-data_totals <- data %>% group_by(GENDER, AGE_BAND, quintile) %>%
-  summarise(total_patients_all = sum(total_patients, na.rm = TRUE),
-            items_total = sum(ITEMS),
-            items4_total = sum(ITEMS4), 
-            items_per_patient_all = items_total / total_patients_all,
-            items4_per_patient_all = items4_total / total_patients_all)
+data_totals <- data %>%
+  group_by(PRACTICE_CODE, GENDER, AGE_BAND, quintile) %>%
+  summarise(
+    total_patients_all = first(total_patients),
+    items_total = sum(ITEMS_1, na.rm = TRUE),
+    items4_total = sum(ITEMS_4, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(GENDER, AGE_BAND, quintile) %>%
+  summarise(
+    total_patients_all = sum(total_patients_all, na.rm = TRUE),
+    items_total = sum(items_total, na.rm = TRUE),
+    items4_total = sum(items4_total, na.rm = TRUE),
+    items_per_patient_all = items_total / total_patients_all,
+    items4_per_patient_all = items4_total / total_patients_all,
+    .groups = "drop"
+  )
 
 # Ensure AGE_BAND is ordered correctly
 data_totals$AGE_BAND <- factor(data_totals$AGE_BAND, 
@@ -39,7 +50,7 @@ data_totals$AGE_BAND <- factor(data_totals$AGE_BAND,
 ###########################################################
 ### PLOT ##################################################
 ###########################################################
-ggplot(data_totals %>% filter(quintile != 'NA'), 
+ggplot(data_totals %>% filter(!is.na(quintile)), 
        aes(x = AGE_BAND, y = (items_per_patient_all + items4_per_patient_all) / 2, fill = quintile)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.7)) +
   geom_errorbar(aes(ymin = items_per_patient_all, ymax = items4_per_patient_all),
@@ -124,26 +135,28 @@ dg %>% filter(!AGE_BAND%in% c("0-5","91-100")) %>% summarise(mean(diff))
 #############################################################################
 #### Does this vary much by GP practice? ############################################
 #############################################################################
-data_totals <- data %>% group_by(PRACTICE_CODE, GENDER, AGE_BAND) %>%
-  summarise(total_patients_all = sum(total_patients, na.rm = TRUE),
-            items_total = sum(ITEMS),
-            items4_total = sum(ITEMS4), 
-            items_per_patient_all = items_total / total_patients_all,
-            items4_per_patient_all = items4_total / total_patients_all)
+data_totals_practice <- data %>%
+  group_by(PRACTICE_CODE, GENDER, AGE_BAND, quintile) %>%
+  summarise(
+    total_patients_all = first(total_patients),
+    items_total = sum(ITEMS_1, na.rm = TRUE),
+    items4_total = sum(ITEMS_4, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 # Ensure AGE_BAND is ordered correctly
-data_totals$AGE_BAND <- factor(data_totals$AGE_BAND, 
+data_totals_practice$AGE_BAND <- factor(data_totals_practice$AGE_BAND, 
                                levels = c("0-5", "6-10", "11-20", 
                                           "21-30", "31-40", "41-50", 
                                           "51-60", "61-70", "71-80", 
                                           "81-90", "91-100"))
 
-ggplot(data_totals %>% filter(!is.na(AGE_BAND)),  
-       aes(x = AGE_BAND, y = items_per_patient_all, group = interaction(PRACTICE_CODE, GENDER))) +
+ggplot(data_totals_practice %>% filter(!is.na(AGE_BAND)),  
+       aes(x = AGE_BAND, y = items_total, group = interaction(PRACTICE_CODE, GENDER))) +
   geom_line(aes(colour = GENDER)) + 
   geom_point(aes(colour = GENDER)) +
-  geom_line(aes(y = items4_per_patient_all, colour = GENDER), linetype = "dashed") + 
-  geom_point(aes(y = items4_per_patient_all, colour = GENDER), pch = 2) + 
+  geom_line(aes(y = items4_total, colour = GENDER), linetype = "dashed") + 
+  geom_point(aes(y = items4_total, colour = GENDER), pch = 2) + 
   theme_minimal() +
   theme(panel.grid.major.y = element_line(size = 0.1, color = "black"),
         panel.grid.minor.y = element_line(size = 0.1, color = "black")) +
@@ -156,14 +169,14 @@ ggplot(data_totals %>% filter(!is.na(AGE_BAND)),
 ###############################################
 foidata_summary <- data %>%
   group_by(GENDER, ANTIBIOTIC_GROUP, AGE_BAND) %>%
-  summarise(total_items = sum(ITEMS, na.rm = TRUE), .groups = "drop") %>%
+  summarise(total_items = sum(ITEMS_1, na.rm = TRUE), .groups = "drop") %>%
   ungroup() %>%
   mutate(total_items_ageband = ave(total_items, AGE_BAND, FUN = sum),
          percentage = (total_items / total_items_ageband) * 100)
 #############################################
-foidata_summary <- foidata_combined %>%
+foidata_summary <- data %>%
   group_by(GENDER, ANTIBIOTIC_GROUP, AGE_BAND) %>%
-  summarise(total_items = sum(ITEMS, na.rm = TRUE), .groups = "drop") %>%
+  summarise(total_items = sum(ITEMS_1, na.rm = TRUE), .groups = "drop") %>%
   ungroup() %>%
   mutate(total_items_ageband_gender = ave(total_items, AGE_BAND, GENDER, FUN = sum),
          percentage = (total_items / total_items_ageband_gender) * 100)
@@ -191,7 +204,7 @@ g1c <-
                               color = ANTIBIOTIC_GROUP, 
                               group = interaction(ANTIBIOTIC_GROUP, GENDER), 
                               linetype = GENDER)) +
-  geom_line(size = 1) +  # Line plot with a consistent width
+  geom_line(linewidth = 1) +  # Line plot with a consistent width
   geom_point(size = 2) +  # Points for each data point
   # geom_text(data = last_points, aes(label = ANTIBIOTIC_GROUP), 
   #           size = 3, vjust = -0.5, hjust = -0.1, # Adjust label position
