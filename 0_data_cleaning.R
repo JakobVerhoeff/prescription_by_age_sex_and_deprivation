@@ -145,14 +145,14 @@ deprivationdata <- deprivationdata %>% rename(PRACTICE_CODE = Area.Code)
 deprivationdata$quintile <- cut(
   deprivationdata$Value,
   breaks = quantile(deprivationdata$Value, probs = seq(0, 1, 0.2), na.rm = TRUE),
-  labels = c("Q1", "Q2", "Q3", "Q4", "Q5"),
+  labels = c("Q5", "Q4", "Q3", "Q2", "Q1"),
   include.lowest = TRUE
 )
 
 deprivationdata$split10 <- cut(
   deprivationdata$Value,
   breaks = quantile(deprivationdata$Value, probs = seq(0, 1, 0.1), na.rm = TRUE),
-  labels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"),
+  labels = c("Q10", "Q9", "Q8", "Q7", "Q6", "Q5", "Q4", "Q3", "Q2", "Q1"),
   include.lowest = TRUE
 )
 
