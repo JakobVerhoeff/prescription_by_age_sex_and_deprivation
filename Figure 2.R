@@ -10,6 +10,7 @@ library(stringr)
 library(viridis)
 library(here)
 setwd(here())
+theme_set(theme_bw(base_size = 12))
 
 # read in combined data 
 data <- read_csv("data/cleaned_combined_data.csv")
@@ -35,7 +36,7 @@ imd_pops$age_band <- cut(imd_pops$age, breaks = breaks, labels = labels, right =
 
 
 ############## Overall ########################################################
-SWITCH_denominator <- "GP" #"IMD" #or "GP"
+SWITCH_denominator <- "IMD" #"IMD" #or "GP"
 
 if(SWITCH_denominator == "GP"){
   deprivationpops = totals_gp_bysplit10 %>% group_by(split10, PRACTICE_CODE) %>%
@@ -65,7 +66,7 @@ deprivationpops_5$total_patients <- as.numeric(deprivationpops_5$total_patients)
 
 final_highlevel = data %>%
   group_by(split5)%>%
-  summarise(ITEMS = sum(ITEMS)) %>%
+  summarise(ITEMS = sum(ITEMS_1)) %>%
   left_join(deprivationpops_5) %>%
   mutate(items_per_10000 = ITEMS / total_patients * 10000,
          items_per_1000_pd = (ITEMS/365) /  (total_patients) * 1000) %>% ungroup()
@@ -89,7 +90,7 @@ if(SWITCH_denominator == "GP"){
   overall = data %>%
     #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
     group_by(split10, GENDER, PRACTICE_CODE) %>%
-    summarise(ITEMS =  sum(ITEMS)) %>%
+    summarise(ITEMS =  sum(ITEMS_1)) %>%
     left_join(totals_gp_bysplit10_sexgp) %>%
     mutate(items_per_10000 = ITEMS / total_population * 10000)
 }else{# IMD
@@ -99,7 +100,7 @@ if(SWITCH_denominator == "GP"){
   overall = data %>%
     #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
     group_by(split10, GENDER) %>%
-    summarise(ITEMS =  sum(ITEMS)) %>% 
+    summarise(ITEMS =  sum(ITEMS_1)) %>% 
     ungroup() %>% 
     left_join(imd_pops_sex) %>%
     mutate(items_per_10000 = ITEMS / total_population * 10000)
@@ -139,7 +140,7 @@ ggplot(overall %>% filter(items_per_10000 < 20000), aes(x = split10, y = items_p
 # Some big outliers - more in later quintiles (more deprived)
 overall %>% filter(items_per_10000 > 20000)
 # Y02751 also an outlier in Open Prescribing
-data %>% filter(PRACTICE_CODE == "Y02751") %>% filter(ITEMS > 0, AGE_BAND == "0-5") %>% dplyr::select(split10, PRACTICE_CODE,AGE_BAND, ITEMS, ANTIBIOTIC_GROUP)
+data %>% filter(PRACTICE_CODE == "Y02751") %>% filter(ITEMS_1 > 0, AGE_BAND == "0-5") %>% dplyr::select(split10, PRACTICE_CODE,AGE_BAND, ITEMS_1, ANTIBIOTIC_GROUP)
 sub <- data %>% filter(PRACTICE_CODE %in% c("J82208", "Y02751","A81004")) # random Q7 practices and high one Y02751
 sub$AGE_BAND <- factor(sub$AGE_BAND, 
                        levels = c("0-5", "6-10", "11-20", 
@@ -171,14 +172,14 @@ if(SWITCH_denominator == "GP"){
   final = data %>%
     filter(!is.na(ANTIBIOTIC_GROUP)) %>% 
     group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
-    summarise(ITEMS = sum(ITEMS)) %>%
+    summarise(ITEMS = sum(ITEMS_1)) %>%
     left_join(totals_gp_bysplit10) %>%
     mutate(items_per_1000 = (ITEMS/30) / total_population * 1000)
 }else{ #IMD
   final = data %>%
     filter(!is.na(ANTIBIOTIC_GROUP)) %>% 
     group_by(split10, GENDER, ANTIBIOTIC_GROUP)%>%
-    summarise(ITEMS = sum(ITEMS)) %>%
+    summarise(ITEMS = sum(ITEMS_1)) %>%
     left_join(imd_pops_sex) %>%
     mutate(items_per_1000 = (ITEMS/30) / total_population * 1000)
 }
@@ -313,7 +314,7 @@ ggsave("plots/figure2d.jpeg")
 ## Prescription rates by age sex
 age_sex_imd = data %>%
   group_by(split10, GENDER, AGE_BAND)%>%
-  summarise(ITEMS = sum(ITEMS)) %>% 
+  summarise(ITEMS = sum(ITEMS_1)) %>% 
   #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
   left_join(totals_gp_bysplit10_as) %>%
   mutate(items_per_10000 = ITEMS / total_population * 10000)
@@ -340,7 +341,7 @@ ggplot(age_sex_imd, aes(x = factor(split10), y = items_per_10000, fill = AGE_BAN
 ### each antibiotic 
 age_sex_imd = data %>%
   group_by(split10, GENDER, AGE_BAND, ANTIBIOTIC_GROUP)%>%
-  summarise(ITEMS = sum(ITEMS)) %>% 
+  summarise(ITEMS = sum(ITEMS_1)) %>% 
   #agesexpop = sum(total_patients)) %>% # this doesn't work as doesn't sum those with no prescriptions
   left_join(totals_gp_bysplit10_as) %>%
   mutate(items_per_10000 = ITEMS / total_population * 10000)
@@ -395,7 +396,7 @@ ggsave("plots/figure2.jpeg", width = 12, height = 8)
 ## Do men get more pencillins than women? Does this explain it? 
 data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
   group_by(GENDER) %>%
-  summarise(sum(ITEMS)) 
+  summarise(sum(ITEMS_1)) 
 # No... 
 # Does a certain age group get more penicillins? 
 data$AGE_BAND <- factor(data$AGE_BAND, 
@@ -408,7 +409,7 @@ totals_age <- totals_gp_bysplit10_as %>%
   summarise(total = sum(total_population))
 pen_age <- data %>% filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
   group_by(AGE_BAND) %>%
-  summarise(total_items = sum(ITEMS)) %>%
+  summarise(total_items = sum(ITEMS_1)) %>%
   left_join(totals_age) %>%
   mutate(items_per_10000 = (total_items / total)*10000) %>%
   arrange(items_per_10000)
@@ -425,3 +426,41 @@ ggplot(pen_age, aes(x=AGE_BAND, y = items_per_10000)) +
   theme_minimal()
 
 ## yes more in kids and v old... 
+## 
+## 
+## #### Variation between registrations and total 
+### GP level registrations summed over IMD
+gp_registrations = data %>% 
+    # Select first row for each practice code and age band to avoid double counting
+    group_by(AGE_BAND, GENDER, PRACTICE_CODE) %>% 
+    slice(1) %>% 
+    ungroup() %>%
+    select(AGE_BAND, GENDER, PRACTICE_CODE, total_patients, split10) %>%
+    group_by(split10, AGE_BAND, GENDER) %>% 
+    summarise(tot_reg = sum(total_patients)) 
+### Population at IMD level 
+colnames(imd_pops) <- c("GENDER","split10","age","popn","AGE_BAND")
+deprivationpops = imd_pops %>% 
+  group_by(GENDER, AGE_BAND, split10) %>%
+    summarise(tot_pop = sum(popn))
+deprivationpops$split10 = paste0("Q",deprivationpops$split10)
+### JOIN
+demoninators <- left_join(gp_registrations, deprivationpops) %>%
+  mutate(ratio = tot_reg / tot_pop)
+demoninators$split10 <- factor(demoninators$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
+ggplot(demoninators, aes(x = split10, y = ratio, group = GENDER)) + 
+  geom_point(aes(col = GENDER)) + 
+  geom_line(aes(col = GENDER)) + 
+  scale_y_continuous("Ratio: higher = more patients registered than population") +
+  facet_wrap(~AGE_BAND) + 
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  ggtitle("Q1 = least deprived, Q10 = most deprived")
+
+ggplot(demoninators, aes(x = split10, y = ratio, group = AGE_BAND)) + 
+  geom_point(aes(col = AGE_BAND)) + 
+  geom_line(aes(col = AGE_BAND)) + 
+  scale_y_continuous("Ratio: higher = more patients registered than population") +
+  facet_wrap(~GENDER) + 
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  ggtitle("Q1 = least deprived, Q10 = most deprived")
+
