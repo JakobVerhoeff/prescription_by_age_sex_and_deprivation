@@ -23,12 +23,14 @@ All datasets used in this analysis are publicly available and can be accessed vi
 
 Please note the specific filenames and formats expected by the cleaning script (see 01_data_cleaning.R). Please note the expected `data/` folder structure for storing raw and intermediate files:
 
+```
 data/
 ├── foi/
 │   └── (FOI raw data files) (e.g., foi02243_practice_2022_2023.csv)
 ├── (IMD data) (e.g., File_7_-_All_IoD2019_Scores__Ranks__Deciles_and_Population_Denominators_3.csv)
 ├── (Postcode-LAD lookup table)  (e.g., PCD_OA21_LSOA21_MSOA21_LAD_FEB24_UK_LU.csv)
 └── (GP-postcode lookup table) (e.g., epraccur-2.csv)
+```
 
 ## Reproducing the analysis
 
