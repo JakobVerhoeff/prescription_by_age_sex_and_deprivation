@@ -12,6 +12,7 @@ library(here)
 setwd(here())
 theme_set(theme_bw(base_size = 12))
 
+rm(list = ls())
 # read in combined data 
 data <- read_csv("data/cleaned_combined_data.csv")
 
@@ -20,19 +21,54 @@ totals_gp_bysplit10 <- read_csv("data/cleaned_totals_gp_bysplit10_sexgp.csv")
 
 # imd population by age and sex for England
 # from: https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/adhocs/13773populationsbyindexofmultipledeprivationimddecileenglandandwales2020
-imd_pops <- read_csv("data/imd_popns.csv") %>% 
-  pivot_longer(cols = `0`:`90+`, names_to = "age", values_to = "popn")
-imd_pops[which(imd_pops$age == "90+"),"age"] <- "95"
-imd_pops$age <- as.numeric(imd_pops$age)
+#imd_pops <- read_csv("data/imd_popns.csv") %>% 
+#  pivot_longer(cols = `0`:`90+`, names_to = "age", values_to = "popn")
+# Updated 2025 populations FOR ENGLAND
+#imd_pops <- read_csv("data/File_1_IoD2025 Index of Multiple Deprivation.csv")
+# 2019 values for Englan dy age and sex
+# https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/adhocs/12386populationbyindexofmultipledeprivationimdengland2001to2019
+imd_pops <- read_csv("data/popsbyimdengland20012019.csv")[,1:23] %>% 
+  select(-year, imd:gender) %>%
+  pivot_longer(cols = `<1`:`90+`, names_to = "age", values_to = "popn") 
+sum(imd_pops$popn) # check = 56mil
+  
 
-# Define age band breaks and labels
-breaks <- c(-Inf, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
-labels <- c("0-5", "6-10", "11-20", "21-30", "31-40", 
-            "41-50", "51-60", "61-70", "71-80", "81-90", 
-            "91-100")
-
-# Cut the ages into age bands
-imd_pops$age_band <- cut(imd_pops$age, breaks = breaks, labels = labels, right = TRUE)
+imd_pops <- imd_pops %>%
+  mutate(
+    AGE_BAND = dplyr::recode(
+      age,
+      "<1" = "0-5",
+      "01-04" = "0-5",
+      
+      "05-09" = "6-10",
+      
+      "10-14" = "11-20",
+      "15-19" = "11-20",
+      
+      "20-24" = "21-30",
+      "25-29" = "21-30",
+      
+      "30-34" = "31-40",
+      "35-39" = "31-40",
+      
+      "40-44" = "41-50",
+      "45-49" = "41-50",
+      
+      "50-54" = "51-60",
+      "55-59" = "51-60",
+      
+      "60-64" = "61-70",
+      "65-69" = "61-70",
+      
+      "70-74" = "71-80",
+      "75-79" = "71-80",
+      
+      "80-84" = "81-90",
+      "85-89" = "81-90",
+      
+      "90+" = "91-100"
+    )
+  )
 
 
 ############## Overall ########################################################
@@ -42,32 +78,36 @@ if(SWITCH_denominator == "GP"){
   deprivationpops = totals_gp_bysplit10 %>% group_by(split10, PRACTICE_CODE) %>%
     summarise(tot = sum(total_population)) %>% ungroup() %>% group_by(split10) %>%
     summarise(total_patients = sum(tot))
+  
+  deprivationpops_5 <- as.data.frame(cbind(split5 = c("Q1", "Q2", "Q3", "Q4", "Q5"),
+                                          total_patients = matrix(0,5,1)))
+  deprivationpops_5[which(deprivationpops_5$split5 == "Q1"),2] <- deprivationpops[which(deprivationpops$split10 == "Q1"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q2"),"total_patients"]
+  deprivationpops_5[which(deprivationpops_5$split5 == "Q2"),2] <- deprivationpops[which(deprivationpops$split10 == "Q3"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q4"),"total_patients"]
+  deprivationpops_5[which(deprivationpops_5$split5 == "Q3"),2] <- deprivationpops[which(deprivationpops$split10 == "Q5"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q6"),"total_patients"]
+  deprivationpops_5[which(deprivationpops_5$split5 == "Q4"),2] <- deprivationpops[which(deprivationpops$split10 == "Q7"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q8"),"total_patients"]
+  deprivationpops_5[which(deprivationpops_5$split5 == "Q5"),2] <- deprivationpops[which(deprivationpops$split10 == "Q9"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q10"),"total_patients"]
+  colnames(deprivationpops_5) <- c("split5","total_patients")
+  deprivationpops_5$total_patients <- as.numeric(deprivationpops_5$total_patients)
+  deprivationpops <- deprivationpops_5
 }else{ # IMD 
-  deprivationpops = imd_pops %>% group_by(imd,) %>%
+  deprivationpops = imd_pops %>% group_by(imd) %>%
     summarise(total_patients = sum(popn))
-  deprivationpops$split10 = paste0("Q",deprivationpops$imd)
+  #deprivationpops$split10 = paste0("Q",deprivationpops$imd)
+  deprivationpops$split5 = paste0("Q",deprivationpops$imd)
 }
 
 data$split5 <- cut(
   data$IMD,
   breaks = quantile(data$IMD, probs = seq(0, 1, 0.2), na.rm = TRUE),
-  labels = c("Q1", "Q2", "Q3", "Q4", "Q5"),
+  labels = c("Q5", "Q4", "Q3", "Q2", "Q1"),
   include.lowest = TRUE
 )
-deprivationpops_5 <- as.data.frame(cbind(split5 = c("Q1", "Q2", "Q3", "Q4", "Q5"),
-                                         total_patients = matrix(0,5,1)))
-deprivationpops_5[which(deprivationpops_5$split5 == "Q1"),2] <- deprivationpops[which(deprivationpops$split10 == "Q1"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q2"),"total_patients"] 
-deprivationpops_5[which(deprivationpops_5$split5 == "Q2"),2] <- deprivationpops[which(deprivationpops$split10 == "Q3"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q4"),"total_patients"] 
-deprivationpops_5[which(deprivationpops_5$split5 == "Q3"),2] <- deprivationpops[which(deprivationpops$split10 == "Q5"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q6"),"total_patients"] 
-deprivationpops_5[which(deprivationpops_5$split5 == "Q4"),2] <- deprivationpops[which(deprivationpops$split10 == "Q7"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q8"),"total_patients"] 
-deprivationpops_5[which(deprivationpops_5$split5 == "Q5"),2] <- deprivationpops[which(deprivationpops$split10 == "Q9"),"total_patients"] + deprivationpops[which(deprivationpops$split10 == "Q10"),"total_patients"] 
-colnames(deprivationpops_5) <- c("split5","total_patients")
-deprivationpops_5$total_patients <- as.numeric(deprivationpops_5$total_patients)
+
 
 final_highlevel = data %>%
   group_by(split5)%>%
   summarise(ITEMS = sum(ITEMS_1)) %>%
-  left_join(deprivationpops_5) %>%
+  left_join(deprivationpops) %>% #left_join(deprivationpops_5) %>%
   mutate(items_per_10000 = ITEMS / total_patients * 10000,
          items_per_1000_pd = (ITEMS/365) /  (total_patients) * 1000) %>% ungroup()
 
@@ -427,7 +467,9 @@ ggplot(pen_age, aes(x=AGE_BAND, y = items_per_10000)) +
 
 ## yes more in kids and v old... 
 ## 
-## 
+
+
+
 ## #### Variation between registrations and total 
 ### GP level registrations summed over IMD
 gp_registrations = data %>% 
@@ -435,32 +477,63 @@ gp_registrations = data %>%
     group_by(AGE_BAND, GENDER, PRACTICE_CODE) %>% 
     slice(1) %>% 
     ungroup() %>%
-    select(AGE_BAND, GENDER, PRACTICE_CODE, total_patients, split10) %>%
+    select(AGE_BAND, GENDER, PRACTICE_CODE, total_patients, split5) %>%
     group_by(split10, AGE_BAND, GENDER) %>% 
     summarise(tot_reg = sum(total_patients)) 
-### Population at IMD level 
-colnames(imd_pops) <- c("GENDER","split10","age","popn","AGE_BAND")
-deprivationpops = imd_pops %>% 
-  group_by(GENDER, AGE_BAND, split10) %>%
-    summarise(tot_pop = sum(popn))
-deprivationpops$split10 = paste0("Q",deprivationpops$split10)
-### JOIN
-demoninators <- left_join(gp_registrations, deprivationpops) %>%
-  mutate(ratio = tot_reg / tot_pop)
-demoninators$split10 <- factor(demoninators$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))
-ggplot(demoninators, aes(x = split10, y = ratio, group = GENDER)) + 
-  geom_point(aes(col = GENDER)) + 
-  geom_line(aes(col = GENDER)) + 
-  scale_y_continuous("Ratio: higher = more patients registered than population") +
-  facet_wrap(~AGE_BAND) + 
-  geom_hline(yintercept = 1, linetype = "dashed") +
-  ggtitle("Q1 = least deprived, Q10 = most deprived")
+colnames(gp_registrations) <- tolower(colnames(gp_registrations))
 
-ggplot(demoninators, aes(x = split10, y = ratio, group = AGE_BAND)) + 
-  geom_point(aes(col = AGE_BAND)) + 
-  geom_line(aes(col = AGE_BAND)) + 
+# Recode gender
+gp_registrations$gender <- dplyr::recode(gp_registrations$gender, "Female" = "females", "Male" = "males")
+
+### Population at IMD level 
+#colnames(imd_pops) <- c("age","imd_dep","age","popn","AGE_BAND")
+colnames(imd_pops) <- tolower(colnames(imd_pops))
+
+deprivationpops = imd_pops %>% 
+  group_by(gender, age_band, imd) %>%
+    summarise(tot_pop = sum(popn))
+deprivationpops$split5 = paste0("Q",deprivationpops$imd)
+### JOIN
+demoninators <- left_join(gp_registrations, deprivationpops, by = c("gender", "age_band", "split5")) %>%
+  mutate(ratio = tot_reg / tot_pop)
+demoninators$split5 <- factor(demoninators$split5, levels = c("Q1", "Q2", "Q3", "Q4", "Q5"))
+# Ensure AGE_BAND is ordered correctly
+demoninators$age_band <- factor(demoninators$age_band, 
+                                levels = c("0-5", "6-10", "11-20", 
+                                           "21-30", "31-40", "41-50", 
+                                           "51-60", "61-70", "71-80", 
+                                           "81-90", "91-100"))
+ggplot(demoninators, aes(x = split5, y = ratio, group = gender)) + 
+  geom_point(aes(col = gender)) + 
+  geom_line(aes(col = gender)) + 
   scale_y_continuous("Ratio: higher = more patients registered than population") +
-  facet_wrap(~GENDER) + 
+  facet_wrap(~age_band) + 
   geom_hline(yintercept = 1, linetype = "dashed") +
-  ggtitle("Q1 = least deprived, Q10 = most deprived")
+  ggtitle("Q1 = most deprived, Q10 = least deprived")
+
+ggplot(demoninators, aes(x = split5, y = ratio, group = age_band)) + 
+  geom_point(aes(col = age_band)) + 
+  geom_line(aes(col = age_band)) + 
+  scale_y_continuous("Ratio: higher = more patients registered than population", lim = c(0,1.5)) +
+  facet_wrap(~gender) + 
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  ggtitle("Q1 = most deprived, Q10 = least deprived")
+
+sum(demoninators$tot_reg) / sum(demoninators$tot_pop)
+
+
+# Are there more old people in the least deprived? 
+# yes 
+imd_pops %>% group_by(imd) %>%
+  summarise(tot_pop = sum(popn),
+            old_pop = sum(popn[age %in% c("65-69","70-74","75-79","80-84", "85-89", "90+")]),
+            prop_old = old_pop / tot_pop)
+
+# Are there more women in the least deprived?
+# no more in least deprived 
+imd_pops %>% group_by(imd, gender) %>%
+  summarise(tot_pop = sum(popn)) %>%
+  pivot_wider(names_from = gender, values_from = tot_pop) %>%
+  mutate(gender_prop = females / (females + males))
+            
 
