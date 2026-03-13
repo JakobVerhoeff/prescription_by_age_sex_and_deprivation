@@ -79,7 +79,9 @@ postcode_lookup <- read_csv(
 #   mutate(across(contains("pcd"), ~ str_remove_all(.x, "\\s+"))) |>
 #   filter(!(pcd7 == pcd8 & pcd8 == pcds))
 
-# 3. Geographic joining ---------------------------------------
+# 3. Geographic joining LAD ---------------------------------------
+# Link FOI data at GP level to LAD level by postcode and sum 
+# over both patients and items by drug, gender, age and LAD 
 foi_combined <- foi_data |>
   left_join(gp_to_postcode, by = "practice_code") |>
   mutate(postcode = str_remove_all(postcode, "\\s+")) |>
@@ -95,7 +97,7 @@ foi_combined <- foi_data |>
     .by = c(bnf_chemical_substance_code, gender, age_band, lad_code)
   )
 
-# 4. Final data ---------------------------------------
+# 4. Final data => baseline analysis  ---------------------------------------
 combined_data <- foi_combined |>
   left_join(imd_data, by = "lad_code")
 
@@ -103,3 +105,63 @@ rm(list = setdiff(ls(), "combined_data"))
 
 # Preview result
 write_csv(combined_data, "data/combined_data.csv")
+
+
+# 5. Geographic joining LSOA (UKHSA method) ---------------------------------------
+# Link FOI data at GP level to LSOA level by postcode and sum 
+# over both patients and items by drug, gender, age and LSOA 
+foi_combined_lsoa <- foi_data |>
+  left_join(gp_to_postcode, by = "practice_code") |>
+  mutate(postcode = str_remove_all(postcode, "\\s+")) |>
+  left_join(
+    postcode_lookup |>
+      select(pcds, lsoa21cd) |>
+      mutate(pcds = str_remove_all(pcds, "\\s+")),
+    by = c("postcode" = "pcds")
+  ) |>
+  reframe(
+    total_patients = sum(unique_patient_count, na.rm = TRUE),
+    total_items = sum(items, na.rm = TRUE),
+    .by = c(bnf_chemical_substance_code, gender, age_band, lsoa21cd)
+  ) |>
+  rename(lsoa_code = lsoa21cd)
+
+# 6. Final data at LSOA ---------------------------------------
+combined_data_lsoa <- foi_combined_lsoa |>
+  left_join(imd_raw, by = "lsoa_code")
+
+# 7. Is there a difference in IMD distribution in the 
+# IMD_RAW data
+# LSOA selected by GP postcode? 
+
+gp_lsoa <- combined_data_lsoa %>% 
+  group_by(lsoa_code) %>%
+  slice(1) %>%
+  ungroup() %>%
+  mutate(source = "GP data")
+
+# Raw LSOA data
+raw_lsoa <- imd_raw %>%
+  mutate(source = "Raw LSOA data")
+
+# Combine
+plot_data <- bind_rows(
+  raw_lsoa %>% select(imd_score, source),
+  gp_lsoa %>% select(imd_score, source)
+)
+
+# Plot
+ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 100,
+                 alpha = 0.2,
+                 position = "identity") +
+  labs(
+    title = "IMD Score Distribution Comparison:\nif use only GP postcode LSOA\n then more higher IMD and fewer low IMD",
+    x = "IMD Score",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+            
