@@ -20,6 +20,8 @@ All datasets used in this analysis are publicly available and can be accessed vi
 	https://digital.nhs.uk/services/organisation-data-service/data-search-and-export/csv-downloads/gp-and-gp-practice-related-data
 - Geography lookup table (Postcode to LAD lookup):
 	https://geoportal.statistics.gov.uk/datasets/f9c8996d451f44b79ab97ddd369ad5db/about
+- Population sizes (Office for National Statistics):
+	https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/estimatesofthepopulationforenglandandwales
 
 Please note the specific filenames and formats expected by the cleaning script (see 01_data_cleaning.R). Please note the expected `data/` folder structure for storing raw and intermediate files:
 
