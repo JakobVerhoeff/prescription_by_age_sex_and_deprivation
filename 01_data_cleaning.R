@@ -16,7 +16,7 @@ age_band_levels <- c(
 
 # Read FOI data for all years in directory
 foi_path <- "data/foi"
-foi_files <- list.files(path = foi_path, full.names = TRUE) # 3 hard coded here. Remove
+foi_files <- list.files(path = foi_path, full.names = TRUE)
 
 foi_raw <- foi_files |>
   map_df(~ read_csv(.x, show_col_types = FALSE)) |>
@@ -74,29 +74,21 @@ postcode_lookup <- read_csv(
 ) |>
   select(pcd7, pcd8, pcds, lad_code = ladcd)
 
+# only difference in pcd is whitespace
+# postcode_lookup |>
+#   mutate(across(contains("pcd"), ~ str_remove_all(.x, "\\s+"))) |>
+#   filter(!(pcd7 == pcd8 & pcd8 == pcds))
+
 # 3. Geographic joining ---------------------------------------
 foi_combined <- foi_data |>
   left_join(gp_to_postcode, by = "practice_code") |>
-  # Join 1: pcd7
+  mutate(postcode = str_remove_all(postcode, "\\s+")) |>
   left_join(
-    postcode_lookup |> select(pcd7, lad_code),
-    by = c("postcode" = "pcd7")
-  ) |>
-  # Join 2: pcd8
-  left_join(
-    postcode_lookup |> select(pcd8, lad_code),
-    by = c("postcode" = "pcd8"),
-    suffix = c("_7", "_8")
-  ) |>
-  # Join 3: pcds
-  left_join(
-    postcode_lookup |> select(pcds, lad_code),
+    postcode_lookup |>
+      select(pcds, lad_code) |>
+      mutate(pcds = str_remove_all(pcds, "\\s+")),
     by = c("postcode" = "pcds")
   ) |>
-  # Coalesce all three attempts (renaming the third join to match)
-  mutate(lad_code = coalesce(lad_code_7, lad_code_8, lad_code)) |>
-  # Clean up temporary join columns
-  select(-lad_code_7, -lad_code_8) |>
   reframe(
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
@@ -110,5 +102,4 @@ combined_data <- foi_combined |>
 rm(list = setdiff(ls(), "combined_data"))
 
 # Preview result
-combined_data |>
-  head()
+write_csv(combined_data, "data/combined_data.csv")
