@@ -97,9 +97,41 @@ foi_combined <- foi_data |>
     .by = c(bnf_chemical_substance_code, gender, age_band, lad_code)
   )
 
-# 4. Final data => baseline analysis  ---------------------------------------
-combined_data <- foi_combined |>
-  left_join(imd_data, by = "lad_code")
+# 4. Add in age and sex of population by LAD --------------------------------
+ons_raw <- read_csv("data/ons_popn_lad_age_sex.csv")
+ons_popn <- ons_raw |>
+  clean_names() |>
+  rename(lad_code = ladcode23) |>
+  pivot_longer(cols = starts_with("population_"), values_to = "popn") |>
+  mutate(year = str_remove(name, "population_")) |>
+  group_by(lad_code) |>
+  # recode f to female, m to male
+  mutate(gender = recode(sex,
+                      "f" = "female",
+                      "m" = "male")) |>
+  # add in age bands
+  mutate(age_band = cut(
+      age,
+      breaks = c(0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Inf),
+      labels = age_band_levels[-length(age_band_levels)], # remove Unknown
+      include.lowest = TRUE,
+      right = TRUE
+    )
+  ) |>
+  group_by(age_band, gender, lad_code, year) |>
+  summarise(pop_a_s = sum(popn, na.rm = TRUE), .groups = "drop") |> # population in this age / sex split
+  filter(year == 2022) # to match FOI data (current) 
+  
+### Check = 0
+sum(ons_popn$pop_a_s, na.rm = TRUE) - sum(ons_raw$population_2022, na.rm = TRUE)
+
+# 5. Final data => baseline analysis  ---------------------------------------
+# Combine IMD by LAD code with FOI data at LAD level (up from GP)
+foi_combined_data_imd <- foi_combined |>
+  left_join(imd_data, by = "lad_code") 
+# Combine with population sizes by age and gender 
+combined_data <- foi_combined_data_imd |>
+  left_join(ons_popn, by = c("lad_code", "gender", "age_band"))
 
 rm(list = setdiff(ls(), "combined_data"))
 
@@ -107,7 +139,8 @@ rm(list = setdiff(ls(), "combined_data"))
 write_csv(combined_data, "data/combined_data.csv")
 
 
-# 5. Geographic joining LSOA (UKHSA method) ---------------------------------------
+
+# 6. Geographic joining LSOA (UKHSA method) ---------------------------------------
 # Link FOI data at GP level to LSOA level by postcode and sum 
 # over both patients and items by drug, gender, age and LSOA 
 foi_combined_lsoa <- foi_data |>
@@ -126,11 +159,18 @@ foi_combined_lsoa <- foi_data |>
   ) |>
   rename(lsoa_code = lsoa21cd)
 
-# 6. Final data at LSOA ---------------------------------------
+# 7. Final data at LSOA ---------------------------------------
 combined_data_lsoa <- foi_combined_lsoa |>
-  left_join(imd_raw, by = "lsoa_code")
+  left_join(imd_raw |> mutate(
+    imd_quintile = ntile(imd_score, 5),
+    imd_quintile = paste0("Q", 6 - imd_quintile)
+  ), by = "lsoa_code")
 
-# 7. Is there a difference in IMD distribution in the 
+# Preview result
+write_csv(combined_data_lsoa, "data/combined_data_lsoa.csv")
+
+
+# 8. Is there a difference in IMD distribution in the 
 # IMD_RAW data
 # LSOA selected by GP postcode? 
 
@@ -164,4 +204,15 @@ ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
   theme_minimal()
 
 
-            
+# 9. ### Does the different combinations matter?  
+# # Does the rate of items per patient vary by IMD quintile?
+# UKHSA linkage:
+combined_data_lsoa %>% 
+  group_by(imd_quintile) %>%
+  summarise(rate = sum(total_items, na.rm = TRUE) / sum(population, na.rm = TRUE))
+
+### our linkage:
+combined_data %>% 
+  group_by(imd_quintile) %>%
+  summarise(rate = sum(total_items, na.rm = TRUE) / sum(population, na.rm = TRUE))
+
