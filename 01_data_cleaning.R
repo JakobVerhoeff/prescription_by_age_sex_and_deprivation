@@ -31,7 +31,7 @@ foi_raw <- foi_files |>
 foi_data <- foi_raw |>
   mutate(across(
     c(unique_patient_count, items),
-    ~ as.numeric(ifelse(.x == "*", 2.5, .x))
+    ~ as.numeric(ifelse(.x == "*", 1, .x)) # stick with 1 for now 
   )) |>
   select(-financial_year)
 
@@ -72,7 +72,7 @@ postcode_lookup <- read_csv(
   "data/PCD_OA21_LSOA21_MSOA21_LAD_FEB24_UK_LU.csv",
   show_col_types = FALSE
 ) |>
-  select(pcd7, pcd8, pcds, lad_code = ladcd)
+  select(pcd7, pcd8, pcds, lad_code = ladcd, lsoa_code = lsoa21cd)
 
 # only difference in pcd is whitespace
 # postcode_lookup |>
@@ -133,8 +133,6 @@ foi_combined_data_imd <- foi_combined |>
 combined_data <- foi_combined_data_imd |>
   left_join(ons_popn, by = c("lad_code", "gender", "age_band"))
 
-rm(list = setdiff(ls(), "combined_data"))
-
 # Preview result
 write_csv(combined_data, "data/combined_data.csv")
 
@@ -148,16 +146,15 @@ foi_combined_lsoa <- foi_data |>
   mutate(postcode = str_remove_all(postcode, "\\s+")) |>
   left_join(
     postcode_lookup |>
-      select(pcds, lsoa21cd) |>
+      select(pcds, lsoa_code) |>
       mutate(pcds = str_remove_all(pcds, "\\s+")),
     by = c("postcode" = "pcds")
   ) |>
   reframe(
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
-    .by = c(bnf_chemical_substance_code, gender, age_band, lsoa21cd)
-  ) |>
-  rename(lsoa_code = lsoa21cd)
+    .by = c(bnf_chemical_substance_code, gender, age_band, lsoa_code)
+  ) 
 
 # 7. Final data at LSOA ---------------------------------------
 combined_data_lsoa <- foi_combined_lsoa |>
@@ -170,7 +167,17 @@ combined_data_lsoa <- foi_combined_lsoa |>
 write_csv(combined_data_lsoa, "data/combined_data_lsoa.csv")
 
 
-# 8. Is there a difference in IMD distribution in the 
+# # 8. Use UKHSA IMD at GP level 
+# Should we add in / use the IMD values from UKHSA? 
+# Uses the LSAO where patients registered = divide by registered list? 
+# deprivationdata<-read.csv("data/deprivation_data.csv")%>%
+#   dplyr::select(-Sex,-Age,-Category,-Category.Type,-Lower.CI.95.0.limit,-Time.period.range,-Compared.to.goal,-New.data,-Time.period.Sortable,-Compared.to.ICB.sub.locations.value.or.percentiles,-Compared.to.England.value.or.percentiles,-Recent.Trend,-Value.note,-Denominator,-Count,-Upper.CI.99.8.limit,-Lower.CI.99.8.limit,-Upper.CI.95.0.limit,-Lower.CI.95.0.limit,-Indicator.ID,-Indicator.Name)
+# deprivationdata<-subset(deprivationdata, Time.period == "2019") # Select IMD2019
+# deprivationdata<-subset(deprivationdata,Area.Type=="GPs") # only use GP's
+# deprivationdata <- deprivationdata %>% rename(PRACTICE_CODE = Area.Code)
+
+
+# 8. Is there a difference in IMD distribution between 2 methods? ---------------------------------------
 # IMD_RAW data
 # LSOA selected by GP postcode? 
 
@@ -204,15 +211,134 @@ ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
   theme_minimal()
 
 
-# 9. ### Does the different combinations matter?  
+# 9. ### Does the different combinations matter?  ---------------------------------------
 # # Does the rate of items per patient vary by IMD quintile?
 # UKHSA linkage:
-combined_data_lsoa %>% 
-  group_by(imd_quintile) %>%
-  summarise(rate = sum(total_items, na.rm = TRUE) / sum(population, na.rm = TRUE))
+lsoa_pop_by_quintile <- combined_data_lsoa |>
+  distinct(lsoa_code, population, imd_quintile) |>
+  group_by(imd_quintile) |>
+  summarise(total_pop = sum(population, na.rm = TRUE))
+
+# all populations by lsoa
+full_lsoa_pop_by_quintile <- imd_raw |>
+  mutate(
+    imd_quintile = ntile(imd_score, 5),
+    imd_quintile = paste0("Q", 6 - imd_quintile)
+  ) |>
+  group_by(imd_quintile) |>
+  summarise(total_pop = sum(population, na.rm = TRUE))
+
+lsoa_local_pop <- combined_data_lsoa |>
+  group_by(imd_quintile) |>
+  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
+  left_join(lsoa_pop_by_quintile, by = "imd_quintile") |>
+  mutate(rate = total_items / total_pop)
+
+lsoa_full_pop <- combined_data_lsoa |>
+  group_by(imd_quintile) |>
+  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
+  left_join(full_lsoa_pop_by_quintile, by = "imd_quintile") |>
+  mutate(rate = total_items / total_pop)
 
 ### our linkage:
-combined_data %>% 
-  group_by(imd_quintile) %>%
-  summarise(rate = sum(total_items, na.rm = TRUE) / sum(population, na.rm = TRUE))
+lad_pop_by_quintile <- combined_data |>
+  distinct(lad_code, gender, age_band, pop_a_s, imd_quintile) |>
+  group_by(imd_quintile) |>
+  summarise(total_pop = sum(pop_a_s, na.rm = TRUE))
 
+lad_pop <- combined_data |>
+  group_by(imd_quintile) |>
+  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
+  left_join(lad_pop_by_quintile, by = "imd_quintile") |>
+  mutate(rate = total_items / total_pop)
+
+## Compare 
+bind_rows(
+ # lsoa_local_pop |> mutate(method = "LSOA (GP-postcode pop)"),
+  lsoa_full_pop  |> mutate(method = "LSOA (full England pop)"),
+  lad_pop        |> mutate(method = "LAD linkage")
+) |>
+  filter(!is.na(imd_quintile)) |>
+  ggplot(aes(x = imd_quintile, y = rate, fill = method)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ method) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
+    y = "Items per person",
+    fill = NULL,
+    title = "Antibiotic prescribing rate by IMD quintile",
+    subtitle = "Comparison of three linkage and denominator methods"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+#### 10. Age standardisation ---------------------------------------
+### More old people in least deprived areas, so age standardisation is important to compare rates across IMD quintiles.
+### Suggests that the higher prescribing rates in more deprived areas may be even higher than they appear, 
+### once we account for the older population in less deprived areas.
+# 1. Calculate the standard population (total across all LADs)
+standard_pop <- combined_data |>
+  distinct(lad_code, gender, age_band, pop_a_s) |>
+  group_by(gender, age_band) |>
+  summarise(std_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop")
+
+# 2. Calculate stratum-specific rates within each IMD quintile
+stratum_rates <- combined_data |>
+  group_by(imd_quintile, gender, age_band) |>
+  summarise(
+    stratum_items = sum(total_items, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  left_join(
+    combined_data |>
+      distinct(lad_code, gender, age_band, pop_a_s, imd_quintile) |>
+      group_by(imd_quintile, gender, age_band) |>
+      summarise(stratum_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop"),
+    by = c("imd_quintile", "gender", "age_band")
+  ) |>
+  mutate(stratum_rate = stratum_items / stratum_pop)
+
+# 3. Apply standard population weights and sum to get ASR
+asr <- stratum_rates |>
+  left_join(standard_pop, by = c("gender", "age_band")) |>
+  group_by(imd_quintile) |>
+  summarise(
+    asr = sum(stratum_rate * std_pop, na.rm = TRUE) / sum(std_pop, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 4. Plot
+asr |>
+  filter(!is.na(imd_quintile)) |>
+  ggplot(aes(x = imd_quintile, y = asr)) +
+  geom_col(fill = "#4DAF4A") +
+  labs(
+    x = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
+    y = "Age-sex standardised items per person",
+    title = "Age-sex standardised antibiotic prescribing by IMD quintile",
+    subtitle = "Direct standardisation, England internal standard population"
+  ) +
+  theme_minimal()
+
+### But how can we see why more old in Q5 but more prescribing in Q1? 
+### Effect of IMD vs age??
+### Compare crude vs standardised
+bind_rows(
+  lad_pop |> mutate(type = "Crude rate"),
+  lsoa_full_pop |> mutate(type = "Crude rate (LSOA)"),
+  asr     |> mutate(rate = asr, type = "Age-sex standardised rate")
+) |>
+  filter(!is.na(imd_quintile)) |>
+  ggplot(aes(x = imd_quintile, y = rate, fill = type)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x    = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
+    y    = "Items per person",
+    fill = NULL,
+    title = "Crude vs age-sex standardised antibiotic prescribing by IMD quintile",
+    subtitle = "Standardisation steepens the gradient, revealing suppression by age structure"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")

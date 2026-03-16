@@ -1,5 +1,5 @@
 # #####################################
-# Data exploration scrip             #
+# Data exploration script             #
 # Author: Gwen Knight            #
 # Date: Fri Mar 13 2026               #
 # #####################################
@@ -27,3 +27,5 @@ ggplot(ons_popn, aes(x=population)) +
 ons_popn %>% filter(population < 100000) # E06000053 = Isle of Scily 
 
 summary(ons_popn$population, na.rm = TRUE)
+
+
