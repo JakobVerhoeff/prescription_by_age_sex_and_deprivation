@@ -77,6 +77,7 @@ aic_table <- aictab(
 print(aic_table)
 
 # Extract coefficients from all models
+# if do m6 then get a lot of imd:age coefficients - remove for simpler plots 
 coef_table <- bind_rows(
   tidy(m1, effects = "fixed", conf.int = TRUE) |> mutate(model = "1: null"),
   tidy(m2, effects = "fixed", conf.int = TRUE) |> mutate(model = "2: IMD"),
