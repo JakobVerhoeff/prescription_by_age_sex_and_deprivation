@@ -33,6 +33,8 @@ foi_data <- foi_raw |>
     c(unique_patient_count, items),
     ~ as.numeric(ifelse(.x == "*", 1, .x)) # stick with 1 for now 
   )) |>
+  # Extract first year from financial year/second year
+  mutate(year = as.integer(str_extract(financial_year, "^\\d{4}"))) |>
   select(-financial_year)
 
 ## IMD score ---------------------------------------
@@ -94,7 +96,7 @@ foi_combined <- foi_data |>
   reframe(
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
-    .by = c(bnf_chemical_substance_code, gender, age_band, lad_code)
+    .by = c(bnf_chemical_substance_code, gender, age_band, lad_code, year)
   )
 
 # 4. Add in age and sex of population by LAD --------------------------------
@@ -103,7 +105,7 @@ ons_popn <- ons_raw |>
   clean_names() |>
   rename(lad_code = ladcode23) |>
   pivot_longer(cols = starts_with("population_"), values_to = "popn") |>
-  mutate(year = str_remove(name, "population_")) |>
+  mutate(year = as.numeric(str_remove(name, "population_"))) |>
   group_by(lad_code) |>
   # recode f to female, m to male
   mutate(gender = recode(sex,
@@ -119,19 +121,19 @@ ons_popn <- ons_raw |>
     )
   ) |>
   group_by(age_band, gender, lad_code, year) |>
-  summarise(pop_a_s = sum(popn, na.rm = TRUE), .groups = "drop") |> # population in this age / sex split
-  filter(year == 2022) # to match FOI data (current) 
+  summarise(pop_a_s = sum(popn, na.rm = TRUE), .groups = "drop") #|> # population in this age / sex split
+  #filter(year == 2022) # to match FOI data (current) 
   
 ### Check = 0
-sum(ons_popn$pop_a_s, na.rm = TRUE) - sum(ons_raw$population_2022, na.rm = TRUE)
+sum(ons_popn %>% filter(year == 2022) %>% select(pop_a_s), na.rm = TRUE) - sum(ons_raw$population_2022, na.rm = TRUE)
 
 # 5. Final data => baseline analysis  ---------------------------------------
 # Combine IMD by LAD code with FOI data at LAD level (up from GP)
 foi_combined_data_imd <- foi_combined |>
-  left_join(imd_data, by = "lad_code") 
+  left_join(imd_data, by = "lad_code") # IMD 2019 - same across all years
 # Combine with population sizes by age and gender 
 combined_data <- foi_combined_data_imd |>
-  left_join(ons_popn, by = c("lad_code", "gender", "age_band"))
+  left_join(ons_popn, by = c("lad_code", "gender", "age_band", "year"))
 
 # Preview result
 write_csv(combined_data, "data/combined_data.csv")
@@ -153,7 +155,7 @@ foi_combined_lsoa <- foi_data |>
   reframe(
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
-    .by = c(bnf_chemical_substance_code, gender, age_band, lsoa_code)
+    .by = c(bnf_chemical_substance_code, gender, age_band, lsoa_code, year)
   ) 
 
 # 7. Final data at LSOA ---------------------------------------
@@ -182,19 +184,23 @@ write_csv(combined_data_lsoa, "data/combined_data_lsoa.csv")
 # LSOA selected by GP postcode? 
 
 gp_lsoa <- combined_data_lsoa %>% 
-  group_by(lsoa_code) %>%
+  group_by(lsoa_code, year) %>%
   slice(1) %>%
   ungroup() %>%
   mutate(source = "GP data")
 
-# Raw LSOA data
+# Get all years present in GP data
+gp_years <- unique(gp_lsoa$year)
+
+# Repeat raw LSOA data for every GP year
 raw_lsoa <- imd_raw %>%
-  mutate(source = "Raw LSOA data")
+  mutate(source = "Raw LSOA data") %>%
+  cross_join(tibble(year = gp_years))  # one copy per year
 
 # Combine
 plot_data <- bind_rows(
-  raw_lsoa %>% select(imd_score, source),
-  gp_lsoa %>% select(imd_score, source)
+  raw_lsoa %>% select(imd_score, source, year),
+  gp_lsoa %>% select(imd_score, source, year)
 )
 
 # Plot
@@ -208,14 +214,16 @@ ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
     x = "IMD Score",
     y = "Density"
   ) +
-  theme_minimal()
+  theme_minimal() + 
+  facet_wrap(~year)
+### Same by year as same GPs each time
 
 
 # 9. ### Does the different combinations matter?  ---------------------------------------
 # # Does the rate of items per patient vary by IMD quintile?
 # UKHSA linkage:
 lsoa_pop_by_quintile <- combined_data_lsoa |>
-  distinct(lsoa_code, population, imd_quintile) |>
+  distinct(lsoa_code, population, imd_quintile, year) |>
   group_by(imd_quintile) |>
   summarise(total_pop = sum(population, na.rm = TRUE))
 
@@ -229,25 +237,25 @@ full_lsoa_pop_by_quintile <- imd_raw |>
   summarise(total_pop = sum(population, na.rm = TRUE))
 
 lsoa_local_pop <- combined_data_lsoa |>
-  group_by(imd_quintile) |>
+  group_by(imd_quintile, year) |>
   summarise(total_items = sum(total_items, na.rm = TRUE)) |>
   left_join(lsoa_pop_by_quintile, by = "imd_quintile") |>
   mutate(rate = total_items / total_pop)
 
 lsoa_full_pop <- combined_data_lsoa |>
-  group_by(imd_quintile) |>
+  group_by(imd_quintile, year) |>
   summarise(total_items = sum(total_items, na.rm = TRUE)) |>
   left_join(full_lsoa_pop_by_quintile, by = "imd_quintile") |>
   mutate(rate = total_items / total_pop)
 
 ### our linkage:
 lad_pop_by_quintile <- combined_data |>
-  distinct(lad_code, gender, age_band, pop_a_s, imd_quintile) |>
+  distinct(lad_code, gender, age_band, pop_a_s, imd_quintile, year) |>
   group_by(imd_quintile) |>
   summarise(total_pop = sum(pop_a_s, na.rm = TRUE))
 
 lad_pop <- combined_data |>
-  group_by(imd_quintile) |>
+  group_by(imd_quintile, year) |>
   summarise(total_items = sum(total_items, na.rm = TRUE)) |>
   left_join(lad_pop_by_quintile, by = "imd_quintile") |>
   mutate(rate = total_items / total_pop)
@@ -261,7 +269,7 @@ bind_rows(
   filter(!is.na(imd_quintile)) |>
   ggplot(aes(x = imd_quintile, y = rate, fill = method)) +
   geom_col(position = "dodge") +
-  facet_wrap(~ method) +
+  facet_wrap(year ~ method) +
   scale_fill_brewer(palette = "Set2") +
   labs(
     x = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
@@ -279,20 +287,20 @@ bind_rows(
 ### once we account for the older population in less deprived areas.
 # 1. Calculate the standard population (total across all LADs)
 standard_pop <- combined_data |>
-  distinct(lad_code, gender, age_band, pop_a_s) |>
-  group_by(gender, age_band) |>
+  distinct(lad_code, gender, age_band, pop_a_s, year) |>
+  group_by(gender, age_band, year) |>
   summarise(std_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop")
 
 # 2. Calculate stratum-specific rates within each IMD quintile
 stratum_rates <- combined_data |>
-  group_by(imd_quintile, gender, age_band) |>
+  group_by(imd_quintile, gender, age_band, year) |>
   summarise(
     stratum_items = sum(total_items, na.rm = TRUE),
     .groups = "drop"
   ) |>
   left_join(
     combined_data |>
-      distinct(lad_code, gender, age_band, pop_a_s, imd_quintile) |>
+      distinct(lad_code, gender, age_band, pop_a_s, imd_quintile, year) |>
       group_by(imd_quintile, gender, age_band) |>
       summarise(stratum_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop"),
     by = c("imd_quintile", "gender", "age_band")
@@ -301,8 +309,8 @@ stratum_rates <- combined_data |>
 
 # 3. Apply standard population weights and sum to get ASR
 asr <- stratum_rates |>
-  left_join(standard_pop, by = c("gender", "age_band")) |>
-  group_by(imd_quintile) |>
+  left_join(standard_pop, by = c("gender", "age_band", "year")) |>
+  group_by(imd_quintile, year) |>
   summarise(
     asr = sum(stratum_rate * std_pop, na.rm = TRUE) / sum(std_pop, na.rm = TRUE),
     .groups = "drop"
@@ -319,7 +327,8 @@ asr |>
     title = "Age-sex standardised antibiotic prescribing by IMD quintile",
     subtitle = "Direct standardisation, England internal standard population"
   ) +
-  theme_minimal()
+  theme_minimal() + 
+  facet_wrap(~ year)
 
 ### But how can we see why more old in Q5 but more prescribing in Q1? 
 ### Effect of IMD vs age??
@@ -341,4 +350,26 @@ bind_rows(
     subtitle = "Standardisation steepens the gradient, revealing suppression by age structure"
   ) +
   theme_minimal() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom") + 
+  facet_wrap(~ year)
+
+bind_rows(
+  lad_pop |> mutate(type = "Crude rate (LAD, our linkage)"),
+  lsoa_full_pop |> mutate(type = "Crude rate (LSOA, UKHSA method)"),
+  asr     |> mutate(rate = asr, type = "Age-sex standardised rate")
+) |>
+  filter(!is.na(imd_quintile)) |>
+  ggplot(aes(x = imd_quintile, y = rate, fill = type)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x    = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
+    y    = "Items per person",
+    fill = NULL,
+    title = "Crude vs age-sex standardised antibiotic prescribing by IMD quintile",
+    subtitle = "Standardisation steepens the gradient, revealing suppression by age structure"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") + 
+  facet_grid(type ~ year, scales = "free") 
+
