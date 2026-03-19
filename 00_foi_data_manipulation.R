@@ -1,7 +1,7 @@
 ### foi data manipulation
 ### 
 ### 
-library(data.table)  # Much faster than base R or readr for big files
+library(data.table)  
 
 # Set path to your folder
 foi_folder <- "data/practice_data_yearly"
