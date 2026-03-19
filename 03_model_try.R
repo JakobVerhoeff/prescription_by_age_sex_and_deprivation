@@ -8,8 +8,19 @@ library(broom.mixed)
 library(tidyverse)
 library(AICcmodavg)  # for clean AIC comparison table
 
+### Baseline use 
+### LAD denominator linkage
+link = "lad" #"lsoa"
+
+if(link == "lad"){combined_data <- read_csv("data/combined_data.csv")}
+if(link == "lsoa"){
+  ### Could use LSOA data linkage
+  combined_data <- read_csv("data/combined_data_lsoa.csv") %>%
+    rename(pop_a_s = population)
+}
+
 # Prepare modelling data
-# Aggregate to the level needed: total items and population by LAD, IMD quintile, age, sex
+# Aggregate to the level needed: total items and population by LAD, IMD quintile, age, gender
 model_data <- combined_data |>
   filter(!is.na(imd_quintile), !is.na(pop_a_s), !is.na(lad_code)) |>
   mutate(
@@ -31,7 +42,7 @@ model_data <- model_data |>
 mutate(
   age_band = relevel(factor(age_band), ref = "31-40"),
   gender   = relevel(factor(gender),   ref = "male"),
-  gender   = relevel(factor(year),   ref = "2019")
+  year   = relevel(factor(year),   ref = "2019")
 )
 
 # 0. Null: offset + random LAD only - no year fixed effect
@@ -58,19 +69,19 @@ m3 <- glmmTMB(
   family = nbinom2, data = model_data
 )
 
-# 4. + IMD + sex
+# 4. + IMD + gender
 m4 <- glmmTMB(
   total_items ~ year + imd_quintile + gender + offset(log(pop)) + (1 | lad_code),
   family = nbinom2, data = model_data
 )
 
-# 5. + IMD + age + sex + age*sex
+# 5. + IMD + age + gender + age*gender
 m5 <- glmmTMB(
   total_items ~ year + imd_quintile + age_band * gender + offset(log(pop)) + (1 | lad_code),
   family = nbinom2, data = model_data
 )
 
-# 6. + IMD + age + sex + age*sex + IMD*age + IMD*sex
+# 6. + IMD + age + gender + age*gender + IMD*age + IMD*gender
 m6 <- glmmTMB(
   total_items ~ year + imd_quintile * age_band + imd_quintile * gender + offset(log(pop)) + (1 | lad_code),
   family = nbinom2, data = model_data
@@ -79,7 +90,7 @@ m6 <- glmmTMB(
 # AIC comparison table
 aic_table <- aictab(
   cand.set  = list(m0, m1, m2, m3, m4, m5, m6),
-  modnames  = c("null minus year", "null", "IMD", "IMD+age", "IMD+sex", "IMD+age+sex+age:sex", "IMD+age+sex+IMD:age+IMD:sex")
+  modnames  = c("null minus year", "null", "IMD", "IMD+age", "IMD+gender", "IMD+age+gender+age:gender", "IMD+age+gender+IMD:age+IMD:gender")
 )
 
 print(aic_table)
@@ -91,9 +102,9 @@ coef_table <- bind_rows(
   tidy(m1, effects = "fixed", conf.int = TRUE) |> mutate(model = "1: null"),
   tidy(m2, effects = "fixed", conf.int = TRUE) |> mutate(model = "2: IMD"),
   tidy(m3, effects = "fixed", conf.int = TRUE) |> mutate(model = "3: IMD+age"),
-  tidy(m4, effects = "fixed", conf.int = TRUE) |> mutate(model = "4: IMD+sex"),
-  tidy(m5, effects = "fixed", conf.int = TRUE) |> mutate(model = "5: IMD+age+sex+age:sex"),
- # tidy(m6, effects = "fixed", conf.int = TRUE) |> mutate(model = "6: IMD+age+sex+IMD:age+IMD:sex")
+  tidy(m4, effects = "fixed", conf.int = TRUE) |> mutate(model = "4: IMD+gender"),
+  tidy(m5, effects = "fixed", conf.int = TRUE) |> mutate(model = "5: IMD+age+gender+age:gender"),
+ # tidy(m6, effects = "fixed", conf.int = TRUE) |> mutate(model = "6: IMD+age+gender+IMD:age+IMD:gender")
 ) |>
   filter(term != "(Intercept)") |>
   mutate(
@@ -113,8 +124,8 @@ coef_table |>
     x = "IMD quintile (reference = Q1, most deprived)",
     y = "Incidence rate ratio",
     colour = NULL,
-    title = "IMD coefficients across models",
-    subtitle = "Shows how IMD effect changes after adjusting for age and sex"
+    title = paste0("IMD coefficients across models by model using ", link, " linkage"),
+    subtitle = "Shows how IMD effect changes after adjusting for age and gender"
   ) +
   theme_minimal() +
   theme(legend.position = "bottom") + 
@@ -124,6 +135,27 @@ coef_table |>
   )
 # IMD has no real different effect across the models 
 # ? less of an effect with more complex models? (for Q4&5 at least)
+
+coef_table |>
+  filter(str_detect(term, "imd_quintile")) |>
+  ggplot(aes(x = model, y = irr, ymin = irr_low, ymax = irr_high, colour = term)) +
+  geom_pointrange(position = position_dodge(width = 0.5)) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50") +
+  scale_colour_brewer(palette = "Set2") +
+  labs(
+    x = "IMD quintile (reference = Q1, most deprived)",
+    y = "Incidence rate ratio",
+    colour = NULL,
+    title = paste0("IMD coefficients across models by IMD using ", link, " linkage"),
+    subtitle = "Shows how IMD effect changes after adjusting for age and gender"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") + 
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+### q4 and q5 have a bigger difference / effect but otherwise model effect is small? 
 
 # Plot year coefficients only across models to see how they shift
 coef_table |>
@@ -137,7 +169,7 @@ coef_table |>
     y = "Incidence rate ratio",
     colour = NULL,
     title = "Year coefficients across models",
-    subtitle = "Shows how YEAR effect changes after adjusting for age and sex"
+    subtitle = "Shows how YEAR effect changes after adjusting for age and gender"
   ) +
   theme_minimal() +
   theme(legend.position = "bottom") + 
@@ -152,16 +184,17 @@ coef_table |>
 
 # Compare magnitude of all predictors in m5
 coef_table |>
-  filter(model == "5: IMD+age+sex+age:sex") |>
+  filter(model == "5: IMD+age+gender+age:gender") |>
   ggplot(aes(x = reorder(term, irr), y = irr, ymin = irr_low, ymax = irr_high)) +
   geom_pointrange() +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50") +
+  scale_y_continuous(lim = c(0,3)) +
   coord_flip() +
   labs(
     x = NULL,
     y = "Incidence rate ratio",
     title = "All coefficients from model 5",
-    subtitle = "IMD vs age vs sex effects on antibiotic prescribing"
+    subtitle = "IMD vs age vs gender effects on antibiotic prescribing"
   ) +
   theme_minimal()
 
