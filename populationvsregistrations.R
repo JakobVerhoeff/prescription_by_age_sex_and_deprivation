@@ -28,7 +28,8 @@ gpdatafemale<-read.csv("data/gp-reg-pat-prac-sing-age-female_2019.csv") #As of N
 length(unique(gpdatafemale$ORG_CODE)) # 6518 
 # Should be 7,079 in 2022
 # https://www.statista.com/statistics/996600/gp-practices-in-england/
-
+write_csv(gpdatamale, "data/use_gp-reg-pat-prac-sing-age-male_2019.csv")
+write_csv(gpdatafemale, "data/use_gp-reg-pat-prac-sing-age-female_2019.csv")
 
 ###########################################################
 # EDIT GPDATA/MALE-FEMALE #################################
@@ -38,27 +39,28 @@ gpdatafemale<-gpdatafemale %>% rename(PRACTICE_CODE = ORG_CODE)
 # Define age groups
 w <- which(gpdatamale$AGE == "95+")
 gpdatamale$AGE[w] <- 95
-gpdatamale$AGE<-as.numeric(gpdatamale$AGE)
+#gpdatamale$AGE<-as.numeric(gpdatamale$AGE)
 gpdatamale <- gpdatamale %>% # Divide into the same 5-year agebands as FOI data
+  filter(AGE != "ALL") %>% 
   mutate(
+    age = as.numeric(AGE),
     age_group = case_when(
-      AGE >= 0 & AGE <= 5  ~ "0-5",
-      AGE >= 6 & AGE <= 10 ~ "6-10",
-      AGE >= 11 & AGE <= 20 ~ "11-20",
-      AGE >= 21 & AGE <= 30 ~ "21-30",
-      AGE >= 31 & AGE <= 40 ~ "31-40",
-      AGE >= 41 & AGE <= 50 ~ "41-50",
-      AGE >= 51 & AGE <= 60 ~ "51-60",
-      AGE >= 61 & AGE <= 70 ~ "61-70",
-      AGE >= 71 & AGE <= 80 ~ "71-80",
-      AGE >= 81 & AGE <= 90 ~ "81-90",
-      AGE >= 91 & AGE <= 100 ~ "91-100",
-      AGE == "95+" ~ "91-100",
-      AGE > 100 ~"over 100",
+      age >= 0 & age <= 5  ~ "0-5",
+      age >= 6 & age <= 10 ~ "6-10",
+      age >= 11 & age <= 20 ~ "11-20",
+      age >= 21 & age <= 30 ~ "21-30",
+      age >= 31 & age <= 40 ~ "31-40",
+      age >= 41 & age <= 50 ~ "41-50",
+      age >= 51 & age <= 60 ~ "51-60",
+      age >= 61 & age <= 70 ~ "61-70",
+      age >= 71 & age <= 80 ~ "71-80",
+      age >= 81 & age <= 90 ~ "81-90",
+      age >= 91 & age <= 100 ~ "91-100",
+      age == "95+" ~ "91-100",
+      age > 100 ~"over 100",
       TRUE ~ NA_character_  # Exclude other ages
     )
   ) %>%
-  
   filter(!is.na(age_group))  # Remove rows with excluded ages
 
 # Aggregate the number of patients by PRACTICE_CODE and age group
@@ -74,23 +76,24 @@ gpdatamale <- gpdatamale %>%
 w <- which(gpdatafemale$AGE == "95+")
 gpdatafemale$AGE[w] <- 95
 
-gpdatafemale$AGE<-as.numeric(gpdatafemale$AGE)
 gpdatafemale <- gpdatafemale %>%
+  filter(AGE != "ALL") %>% 
   mutate(
+    age = as.numeric(AGE),
     age_group = case_when(
-      AGE >= 0 & AGE <= 5  ~ "0-5",
-      AGE >= 6 & AGE <= 10 ~ "6-10",
-      AGE >= 11 & AGE <= 20 ~ "11-20",
-      AGE >= 21 & AGE <= 30 ~ "21-30",
-      AGE >= 31 & AGE <= 40 ~ "31-40",
-      AGE >= 41 & AGE <= 50 ~ "41-50",
-      AGE >= 51 & AGE <= 60 ~ "51-60",
-      AGE >= 61 & AGE <= 70 ~ "61-70",
-      AGE >= 71 & AGE <= 80 ~ "71-80",
-      AGE >= 81 & AGE <= 90 ~ "81-90",
-      AGE >= 91 & AGE <= 100 ~ "91-100",
-      AGE == "95+" ~ "91-100",
-      AGE > 100 ~"over 100",
+      age >= 0 & age <= 5  ~ "0-5",
+      age >= 6 & age <= 10 ~ "6-10",
+      age >= 11 & age <= 20 ~ "11-20",
+      age >= 21 & age <= 30 ~ "21-30",
+      age >= 31 & age <= 40 ~ "31-40",
+      age >= 41 & age <= 50 ~ "41-50",
+      age >= 51 & age <= 60 ~ "51-60",
+      age >= 61 & age <= 70 ~ "61-70",
+      age >= 71 & age <= 80 ~ "71-80",
+      age >= 81 & age <= 90 ~ "81-90",
+      age >= 91 & age <= 100 ~ "91-100",
+      age == "95+" ~ "91-100",
+      age > 100 ~"over 100",
       TRUE ~ NA_character_  # Exclude other ages
     )
   ) %>%
