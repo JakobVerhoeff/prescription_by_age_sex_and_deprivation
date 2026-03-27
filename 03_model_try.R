@@ -9,9 +9,11 @@ library(tidyverse)
 library(marginaleffects)
 library(AICcmodavg)  # for clean AIC comparison table
 
+rm(list = ls())
+
 ### Baseline use 
 ### LAD denominator linkage
-link = "lad" #"lsoa"
+link = "lad" #"lsoa" or "lad"
 
 if(link == "lad"){combined_data <- read_csv("data/combined_data.csv")}
 if(link == "lsoa"){
@@ -40,11 +42,11 @@ model_data <- combined_data |>
 
 ## Make refernece men middle age
 model_data <- model_data |>
-mutate(
-  age_band = relevel(factor(age_band), ref = "31-40"),
-  gender   = relevel(factor(gender),   ref = "male"),
-  year   = relevel(factor(year),   ref = "2019")
-)
+  mutate(
+    age_band = relevel(factor(age_band), ref = "31-40"),
+    gender   = relevel(factor(gender),   ref = "male"),
+    year   = relevel(factor(year),   ref = "2019")
+  )
 
 ########## RUNNING THE MODELS ##########
 # 0. Null: offset + random LAD only - no year fixed effect
@@ -85,39 +87,48 @@ m5 <- glmmTMB(
 
 # 6. + IMD + age + gender + age*gender 
 m6 <- glmmTMB(
-  total_items ~ year + imd_quintile + age_band + gender + age_band*gender + offset(log(pop)) + (1 | lad_code),
-  family = nbinom2, data = model_data
+  total_items ~ year + imd_quintile + age_band + gender + age_band:gender + offset(log(pop)) + (1 | lad_code),
+  family = nbinom2, data = model_data,
+  control = glmmTMBControl(optCtrl = list(iter.max = 1000, eval.max = 1000))
 )
 
 # 7. + IMD + age + gender + age*gender + IMD*age + IMD*gender
 m7 <- glmmTMB(
-  total_items ~ year + imd_quintile + age_band + gender + age_band*gender + 
-    imd_quintile * age_band + imd_quintile * gender + offset(log(pop)) + (1 | lad_code),
-  family = nbinom2, data = model_data
+  total_items ~ year + imd_quintile + age_band + gender + age_band:gender + 
+    imd_quintile:age_band + imd_quintile:gender + offset(log(pop)) + (1 | lad_code),
+  family = nbinom2, data = model_data,
+  control = glmmTMBControl(optCtrl = list(iter.max = 1000, eval.max = 1000))
 )
 
 # 8.  + age + gender + age*gender (NO IMD)
 m8 <- glmmTMB(
-  total_items ~ year + age_band + gender + age_band*gender + offset(log(pop)) + (1 | lad_code),
-  family = nbinom2, data = model_data
+  total_items ~ year + age_band + gender + age_band:gender + offset(log(pop)) + (1 | lad_code),
+  family = nbinom2, data = model_data,
+  control = glmmTMBControl(optCtrl = list(iter.max = 1000, eval.max = 1000))
 )
 
-
+# 9.  IMD effect varies by year ?
+m9 <- glmmTMB(
+  total_items ~ year + imd_quintile + year:imd_quintile + age_band + gender + age_band:gender + offset(log(pop)) + (1 | lad_code),
+  family = nbinom2, data = model_data,
+  control = glmmTMBControl(optCtrl = list(iter.max = 1000, eval.max = 1000))
+)
+summary(m9) # impact of covid... 2020 odd year 
 
 # AIC comparison table
 aic_table <- aictab(
-  cand.set  = list(m0, m1, m2, m3, m4, m5, m6, m7, m8),
+  cand.set  = list(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9),
   modnames  = c("null minus year", "null", "IMD", "IMD+age", "IMD+gender", 
                 "IMD+age+gender","IMD+age+gender+age:gender", "IMD+age+gender+age:gender+IMD:age+IMD:gender",
-                "age+gender+age:gender")
+                "age+gender+age:gender", "IMD*year")
 )
 
 print(aic_table)
 # Save AIC table
-write.csv(aic_table, paste0("aic_table_",link,".csv"))
+write.csv(aic_table, paste0("plots/aic_table_",link,".csv"))
 
 # Extract coefficients from all models
-# if do m7 then get a lot of imd:age coefficients - remove for simpler plots 
+# if do m7/m9 then get a lot of imd:age coefficients - remove for simpler plots 
 coef_table <- bind_rows(
   tidy(m0, effects = "fixed", conf.int = TRUE) |> mutate(model = "0: null-year"),
   tidy(m1, effects = "fixed", conf.int = TRUE) |> mutate(model = "1: null"),
@@ -126,8 +137,9 @@ coef_table <- bind_rows(
   tidy(m4, effects = "fixed", conf.int = TRUE) |> mutate(model = "4: IMD+gender"),
   tidy(m5, effects = "fixed", conf.int = TRUE) |> mutate(model = "5: IMD+age+gender"),
   tidy(m6, effects = "fixed", conf.int = TRUE) |> mutate(model = "6: IMD+age+gender+age:gender"),
- # tidy(m7, effects = "fixed", conf.int = TRUE) |> mutate(model = "7: IMD+age+gender+IMD:age+IMD:gender"),
- tidy(m8, effects = "fixed", conf.int = TRUE) |> mutate(model = "8: age+gender+age:gender"),
+  # tidy(m7, effects = "fixed", conf.int = TRUE) |> mutate(model = "7: IMD+age+gender+IMD:age+IMD:gender"),
+  tidy(m8, effects = "fixed", conf.int = TRUE) |> mutate(model = "8: age+gender+age:gender"),
+  # tidy(m9, effects = "fixed", conf.int = TRUE) |> mutate(model = "9: IMD*year + age*gender"),
 ) |>
   filter(term != "(Intercept)") |>
   mutate(
@@ -158,7 +170,7 @@ coef_table |>
   )
 # IMD has no real different effect across the models 
 # ? less of an effect with more complex models? (for Q4&5 at least)
-ggsave(paste0("IMD_across_models_by_model_",link,".pdf"))
+ggsave(paste0("plots/IMD_across_models_by_model_",link,".pdf"))
 
 coef_table |>
   filter(str_detect(term, "imd_quintile")) |>
@@ -180,7 +192,7 @@ coef_table |>
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 ### q4 and q5 have a bigger difference / effect but otherwise model effect is small? 
-ggsave(paste0("IMD_across_models_by_IMD_",link,".pdf"))
+ggsave(paste0("plots/IMD_across_models_by_IMD_",link,".pdf"))
 
 
 
@@ -206,7 +218,7 @@ coef_table |>
   )
 # IMD has no real different effect across the models 
 # ? less of an effect with more complex models? (for Q4&5 at least)
-ggsave(paste0("Year_across_models_",link,".pdf"))
+ggsave(paste0("plots/Year_across_models_",link,".pdf"))
 
 
 # Compare magnitude of all predictors in m6
@@ -224,7 +236,7 @@ coef_table |>
     subtitle = "IMD vs age vs gender effects on antibiotic prescribing"
   ) +
   theme_minimal()
-ggsave(paste0("Predictors_m6_",link,".pdf"))
+ggsave(paste0("plots/Predictors_m6_",link,".pdf"))
 
 ##### EXPLORATIONS ##########
 ### IMD OR AGE IMPORTANT?
@@ -277,7 +289,7 @@ cat("Gender explains", round(unique_gender / unique_imd, 1),
 ## Visuliase
 vp_df <- data.frame(
   component = c("Age (unique)", "IMD (unique)", "Shared"),
-  deviance  = c(unique_age, unique_imd, shared)
+  deviance  = c(unique_age, unique_imd, shared_all)
 ) %>%
   mutate(
     pct = deviance / dev_both * 100,
@@ -406,6 +418,7 @@ as.data.frame(marg) %>%
 ## but deprivation still has a small, consistent independent effect across all age groups.
 
 
+
 # ============================================================
 # 3. HEATMAP of predicted rates: age band x IMD quintile
 # ============================================================
@@ -427,3 +440,164 @@ as.data.frame(marg) %>%
     subtitle = "Males, year = 2019 — darker = higher rate"
   ) +
   theme_minimal()
+ggsave(paste0("plots/Predicted_rates_",link,".pdf"))
+
+##### Does it look like that data? 
+
+#### Take data and overlay
+observed <- model_data %>%
+  filter(gender == "male", year == "2019") %>%
+  group_by(imd_quintile, age_band) %>%
+  summarise(observed_rate = sum(total_items) / sum(pop) * 1000, .groups = "drop") %>%
+  mutate(age_band = factor(age_band, levels = c("0-5","6-10","11-20",
+                                                "21-30","31-40","41-50",
+                                                "51-60","61-70","71-80",
+                                                "81-90","91-100")))
+### overlay
+p1 <-as.data.frame(marg) %>%
+  mutate(age_band = factor(age_band, levels = c("0-5","6-10","11-20",
+                                                "21-30","31-40","41-50",
+                                                "51-60","61-70","71-80",
+                                                "81-90","91-100"))) %>%
+  ggplot(aes(colour = age_band, group = age_band)) +
+  geom_line(aes(x = imd_quintile, y = estimate)) +
+  geom_pointrange(aes(x = imd_quintile, y = estimate, ymin = conf.low, ymax = conf.high), position = position_dodge(width = 0.2)) +
+  scale_colour_viridis_d(option = "C") +
+  labs(
+    x     = "IMD quintile (Q1 = most deprived)",
+    y     = "Predicted items per 1,000 population",
+    colour = "Age band",
+    title  = "Marginal effects: predicted rate by IMD and age band",
+    subtitle = "Males, year = 2019, per 1,000 population"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right") + 
+  geom_point(data = observed, 
+             aes(x = imd_quintile, y = observed_rate, group = age_band, colour = age_band),
+             shape = 4, size = 2, stroke = 1.5)  # X marks observed
+ggsave(paste0("plots/Overlay_data",link,".pdf"))
+
+p1 + facet_wrap(~ age_band) + theme(legend.position = "none")
+ggsave(paste0("plots/Overlay_data_by_age_group",link,".pdf"))
+
+##### But above doesn't have gender in there
+marg2 <- predictions(
+  m5,
+  newdata = datagrid(
+    imd_quintile = levels(model_data$imd_quintile),
+    age_band     = levels(model_data$age_band),
+    gender       = levels(model_data$gender),  # both genders now
+    year         = "2019",
+    pop          = 1000
+  )
+)
+
+observed2 <- model_data %>%
+  filter(year == "2019") %>%  # removed gender filter
+  group_by(imd_quintile, age_band, gender) %>%  # added gender
+  summarise(observed_rate = sum(total_items) / sum(pop) * 1000, .groups = "drop") %>%
+  mutate(
+    age_band    = factor(age_band, levels = c("0-5","6-10","11-20","21-30","31-40",
+                                              "41-50","51-60","61-70","71-80","81-90","91-100")),
+    imd_quintile = factor(imd_quintile, levels = levels(model_data$imd_quintile))
+  )
+
+p2 <- as.data.frame(marg2) %>%
+  filter(gender %in% c("male","female")) %>%
+  mutate(age_band = factor(age_band, levels = c("0-5","6-10","11-20","21-30","31-40",
+                                                "41-50","51-60","61-70","71-80","81-90","91-100"))) %>%
+  ggplot(aes(colour = age_band, group = interaction(gender,age_band))) +
+  geom_line(aes(x = imd_quintile, y = estimate)) +
+  geom_pointrange(aes(x = imd_quintile, y = estimate, ymin = conf.low, ymax = conf.high),
+                  position = position_dodge(width = 0.2)) +
+  geom_point(data = observed2 %>%  filter(gender %in% c("male","female")) ,
+             aes(x = imd_quintile, y = observed_rate, group = age_band, colour = age_band),
+             shape = 4, size = 5, stroke = 1.5) +
+  scale_colour_viridis_d(option = "C") +
+  facet_wrap(~gender) +  # split by gender
+  labs(
+    x        = "IMD quintile (Q1 = most deprived)",
+    y        = "Predicted items per 1,000 population",
+    colour   = "Age band",
+    title    = "Marginal effects: predicted rate by IMD and age band",
+    subtitle = "Year = 2019, per 1,000 population"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+ggsave(paste0("plots/Overlay_gender_data",link,".pdf"))
+
+p2 + facet_wrap(~ age_band) + theme(legend.position = "none")
+ggsave(paste0("plots/Overlay_data_by_age_group_and_gender_",link,".pdf"))
+
+
+### Predicted vs observed
+model_data %>%
+  mutate(predicted = fitted(m5)) %>%
+  ggplot(aes(x = predicted, y = total_items)) +  # swap 'items' for your outcome
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, colour = "red", linetype = "dashed") +
+  labs(x = "Model predicted", y = "Observed", 
+       title = "Predicted vs observed") +
+  theme_minimal()
+ggsave(paste0("plots/Predicted_vs_obs_",link,".pdf"))
+
+
+model_data %>%
+  mutate(predicted = fitted(m5),
+         residual  = total_items - predicted) %>%
+  ggplot(aes(x = predicted, y = residual)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, colour = "red", linetype = "dashed") +
+  labs(x = "Fitted values", y = "Residuals") +
+  theme_minimal()
+ggsave(paste0("plots/Residuals_",link,".pdf"))
+
+
+###### Does the year effect for IMD vary? 
+marg_m9 <- predictions(
+  m9,
+  newdata = datagrid(
+    imd_quintile = levels(model_data$imd_quintile),
+    year         = levels(model_data$year),   # now varying year
+    age_band     = "41-50",                   # hold age constant at a mid reference
+    gender       = "male",
+    pop          = 1000
+  )
+)
+
+as.data.frame(marg_m9) %>%
+  mutate(year = as.integer(as.character(year))) %>%
+  ggplot(aes(x = year, y = estimate, colour = imd_quintile, group = imd_quintile,
+             ymin = conf.low, ymax = conf.high)) +
+  geom_line() +
+  geom_pointrange() +
+  scale_colour_viridis_d(option = "D") +
+  labs(
+    x        = "Year",
+    y        = "Predicted items per 1,000 population",
+    colour   = "IMD quintile",
+    title    = "Has the deprivation gradient in prescribing changed over time?",
+    subtitle = "Males, age 41-50, per 1,000 population"
+  ) +
+  theme_minimal()
+ggsave(paste0("plots/IMD_gradient_over_time_",link,".pdf"))
+
+### LAD analysis 
+## The lines are almost perfectly parallel - deprivation gradient consistent
+AIC(m8,m9)
+# SOOO similar - year * IMD doing v little 
+# Plot days the deprivation effect is small but consistent
+# Q1 (most deprived, purple) is consistently slightly higher than Q5 (least deprived, yellow) across all years
+#  why 2019 the drop though? looks like a data issue? 
+model_data %>%
+  filter(year == "2019") %>%
+  summarise(total = sum(total_items), n_rows = n())
+
+# Compare to neighbouring years
+model_data %>%
+  group_by(year) %>%
+  summarise(total = sum(total_items), n_rows = n())
+### Why does 2019 have so fewer??? should be 2020? 
+### ### Ahhh financial year
+### So 2019 is April 2019 to April 2020 => stil seems like a big drop 
+### But 2020 also lower.. 
