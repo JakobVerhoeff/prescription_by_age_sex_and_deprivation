@@ -207,7 +207,7 @@ plot_data <- bind_rows(
 ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
   geom_histogram(aes(y = after_stat(density)),
                  bins = 100,
-                 alpha = 0.2,
+                 alpha = 0.1,
                  position = "identity") +
   labs(
     title = "IMD Score Distribution Comparison:\nif use only GP postcode LSOA\n then more higher IMD and fewer low IMD",
@@ -216,7 +216,22 @@ ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
   ) +
   theme_minimal() + 
   facet_wrap(~year)
+ggsave("plots/imd_score_distribution_comparison.png", width = 10, height = 6)
 ### Same by year as same GPs each time
+ggplot(plot_data %>% filter(year == 2018), aes(x = imd_score, fill = source, colour = source)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 100,
+                 alpha = 0.1,
+                 position = "identity") +
+  labs(
+    title = "IMD Score Distribution Comparison:\nif use only GP postcode LSOA\n then more higher IMD and fewer low IMD",
+    x = "IMD Score",
+    y = "Density"
+  ) +
+  theme_minimal() + 
+  facet_wrap(~year)
+ggsave("plots/imd_score_distribution_comparison.png", width = 10, height = 6)
+
 
 
 # 9. ### Does the different combinations matter?  ---------------------------------------
