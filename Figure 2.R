@@ -122,90 +122,146 @@ g1 <- ggplot(final_highlevel, aes(x=split5, y = items_per_1000_pd)) + #items_per
 g1
 # compare to box figure 3.4.1 from ESPAUR => get the same effect with IMD populations sizes but not GP registered denominator 
 
-############## By gender  ########################################################
-### If include gender how does it vary? 
-# population sizes
-if(SWITCH_denominator == "GP"){
-  totals_gp_bysplit10_sexgp <- read_csv("data/cleaned_totals_gp_bysplit10_sexgp.csv")
-  overall = data %>%
-    #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
-    group_by(split10, GENDER, PRACTICE_CODE) %>%
-    summarise(ITEMS =  sum(ITEMS_1)) %>%
-    left_join(totals_gp_bysplit10_sexgp) %>%
-    mutate(items_per_10000 = ITEMS / total_population * 10000)
-}else{# IMD
-  imd_pops_sex <- imd_pops %>% group_by(sex, imd) %>% summarise(total_population = sum(popn)) %>% rename(GENDER = sex)
-  imd_pops_sex$split10 = paste0("Q",imd_pops_sex$imd)
-  
-  overall = data %>%
-    #filter(ANTIBIOTIC_GROUP == "Penicillins") %>%
-    group_by(split10, GENDER) %>%
-    summarise(ITEMS =  sum(ITEMS_1)) %>% 
-    ungroup() %>% 
-    left_join(imd_pops_sex) %>%
-    mutate(items_per_10000 = ITEMS / total_population * 10000)
-  
-}
+############## Age/sex distribution by IMD  ####################################
+imd_pops_sex <- imd_pops %>%
+  group_by(gender, imd, age_band) %>%
+  summarise(popn = sum(popn)) %>%
+  ungroup()
+imd_pops_sex$split10 <- paste0("Q", imd_pops_sex$imd)
+imd_pops_sex$split10 <- factor(imd_pops_sex$split10, levels = paste0("Q", 1:10))
+imd_pops_sex$age_band <- factor(imd_pops_sex$age_band,
+                                levels = c("0-5", "6-10", "11-20",
+                                           "21-30", "31-40", "41-50",
+                                           "51-60", "61-70", "71-80",
+                                           "81-90", "91-100"))
 
-overall$split10 <- factor(overall$split10, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"))#c("Q10", "Q9", "Q8", "Q7", "Q6", "Q5", "Q4", "Q3", "Q2", "Q1"))
-
-# Take mean 
-overall_mean <- overall %>% group_by(split10, GENDER) %>%
-  summarise(mean = mean(items_per_10000),
-            sd = sd(items_per_10000))
-## Mean over GP level per 10000 by gender
-ggplot(overall_mean, aes(x=split10, y = mean, group = GENDER)) + 
-  geom_line(aes(colour = GENDER)) + 
-  geom_errorbar(aes(ymin = mean-sd, ymax = mean+sd, group = GENDER, colour = GENDER)) + 
-  theme_minimal() + 
-  scale_y_continuous(lim = c(0,20000)) + 
-  labs(x = "Quintile",
-       y = "Items per 10,000 Patients per month",
-       linetype = "Gender") 
-
-
-ggplot(overall %>% filter(items_per_10000 < 20000), aes(x = split10, y = items_per_10000, colour = GENDER, group = GENDER)) + 
-  #  geom_jitter() + 
-  geom_boxplot(aes(group = interaction(GENDER,split10))) + 
-  #geom_line(aes(group = GENDER)) + 
+# Proportions by IMD decile and sex
+ggplot(imd_pops_sex, aes(x = split10, y = popn, fill = age_band)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_wrap(~gender) +
+  labs(x = "IMD Decile (Q1 = most deprived)",
+       y = "Population proportion",
+       fill = "Age Band") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  # scale_y_continuous(lim = c(0,500)) + 
-  labs(x = "Quintile",
-       y = "Items per 10,000 Patients per month",
-       linetype = "Gender") + 
-  geom_line(data = overall_mean, aes(x=split10, y = mean, group = GENDER)) + 
-  scale_y_continuous(lim = c(0,20000))
-
-# Some big outliers - more in later quintiles (more deprived)
-overall %>% filter(items_per_10000 > 20000)
-# Y02751 also an outlier in Open Prescribing
-data %>% filter(PRACTICE_CODE == "Y02751") %>% filter(ITEMS_1 > 0, AGE_BAND == "0-5") %>% dplyr::select(split10, PRACTICE_CODE,AGE_BAND, ITEMS_1, ANTIBIOTIC_GROUP)
-sub <- data %>% filter(PRACTICE_CODE %in% c("J82208", "Y02751","A81004")) # random Q7 practices and high one Y02751
-sub$AGE_BAND <- factor(sub$AGE_BAND, 
-                       levels = c("0-5", "6-10", "11-20", 
-                                  "21-30", "31-40", "41-50", 
-                                  "51-60", "61-70", "71-80", 
-                                  "81-90", "91-100"))
-ggplot(sub, aes(x=AGE_BAND, y = items_per_patient, group = interaction(PRACTICE_CODE, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE))) + 
-  geom_line(aes(col = PRACTICE_CODE)) + 
-  facet_wrap(~ANTIBIOTIC_GROUP) + 
-  theme_minimal() + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-sub <- data %>% filter(PRACTICE_CODE %in% c("J82208", "Y02751","A81004","Y02625","Y02494")) # random Q7 practices and high others
-sub <- sub %>% mutate(high = ifelse(PRACTICE_CODE %in% c("Y02751","Y02625","Y02494"),1,0))
-sub$AGE_BAND <- factor(sub$AGE_BAND, 
-                       levels = c("0-5", "6-10", "11-20", 
-                                  "21-30", "31-40", "41-50", 
-                                  "51-60", "61-70", "71-80", 
-                                  "81-90", "91-100"))
-ggplot(sub, aes(x=AGE_BAND, y = items_per_patient, group = interaction(PRACTICE_CODE, GENDER, BNF_CHEMICAL_SUBSTANCE_CODE))) + 
-  geom_line(aes(col = factor(high))) + 
-  facet_wrap(~ANTIBIOTIC_GROUP) + 
-  theme_minimal() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("plots/age_sex_distribution_by_IMD_prop.jpeg")
 
-sub %>% filter(high == 1) %>% dplyr::select(c(Area.Name, Parent.Name)) %>% group_by(Parent.Name) %>% slice(1)
+# Absolute numbers by IMD decile and sex
+ggplot(imd_pops_sex, aes(x = split10, y = popn, fill = age_band)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~gender) +
+  labs(x = "IMD Decile (Q1 = most deprived)",
+       y = "Population size",
+       fill = "Age Band") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("plots/age_sex_distribution_by_IMD_numbers.jpeg")
+
+# Population pyramid by IMD decile
+# Use proportions so shape is comparable across deciles
+imd_pyramid <- imd_pops_sex %>%
+  group_by(imd) %>%
+  mutate(prop = popn / sum(popn)) %>%
+  ungroup() %>%
+  mutate(prop = ifelse(gender == "males", -prop, prop))
+
+# Pyramid for selected deciles (most deprived, middle, least deprived)
+ggplot(imd_pyramid %>% filter(imd %in% c(1, 5, 10)),
+       aes(x = age_band, y = prop, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  facet_wrap(~split10, ncol = 3) +
+  scale_y_continuous(labels = function(x) paste0(abs(x) * 100, "%")) +
+  scale_fill_manual(values = c("females" = "#E76F51", "males" = "#264653")) +
+  labs(x = "Age Band", y = "Proportion of decile population",
+       fill = "Sex") +
+  theme_minimal() +
+  theme(panel.spacing = unit(1, "lines"))
+ggsave("plots/pyramid_by_IMD_selected.pdf", width = 10, height = 5)
+
+# All deciles
+ggplot(imd_pyramid,
+       aes(x = age_band, y = prop, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  facet_wrap(~split10, ncol = 5) +
+  scale_y_continuous(labels = function(x) paste0(abs(x) * 100, "%")) +
+  scale_fill_manual(values = c("females" = "#E76F51", "males" = "#264653")) +
+  labs(x = "Age Band", y = "Proportion of decile population",
+       fill = "Sex") +
+  theme_minimal() +
+  theme(panel.spacing = unit(0.5, "lines"),
+        axis.text.x = element_text(size = 7))
+ggsave("plots/pyramid_by_IMD_all.pdf", width = 12, height = 8)
+
+# Overlay: compare Q1 (most deprived) vs Q10 (least deprived) on same axes
+imd_overlay <- imd_pyramid %>%
+  filter(imd %in% c(1, 5)) %>%
+  mutate(group = paste0(gender, " - ", split10))
+
+ggplot(imd_overlay,
+       aes(x = age_band, y = prop, fill = group)) +
+  geom_bar(stat = "identity", position = "identity", alpha = 0.5) +
+  coord_flip() +
+  scale_y_continuous(labels = function(x) paste0(abs(x) * 100, "%")) +
+  scale_fill_manual(values = c("females - Q1"  = "#E76F51",
+                               "females - Q5" = "#F4A896",
+                               "males - Q1"    = "#264653",
+                               "males - Q5"   = "#7BA7B5")) +
+  labs(x = "Age Band", y = "Proportion of decile population",
+       fill = "") +
+  theme_minimal()
+ggsave("plots/pyramid_Q1_vs_Q10_overlay.pdf", width = 8, height = 5)
+
+# Overlay on absolute numbers
+imd_overlay_abs <- imd_pops_sex %>%
+  filter(imd %in% c(1, 5)) %>%
+  mutate(popn = ifelse(gender == "males", -popn, popn),
+         group = paste0(gender, " - ", split10))
+
+ggplot(imd_overlay_abs,
+       aes(x = age_band, y = popn, fill = group)) +
+  geom_bar(stat = "identity", position = "identity", alpha = 0.5) +
+  coord_flip() +
+  scale_y_continuous(labels = function(x) format(abs(x), big.mark = ",")) +
+  scale_fill_manual(values = c("females - Q1"  = "#E76F51",
+                               "females - Q5" = "#F4A896",
+                               "males - Q1"    = "#264653",
+                               "males - Q5"   = "#7BA7B5")) +
+  labs(x = "Age Band", y = "Population",
+       fill = "") +
+  theme_minimal()
+ggsave("plots/pyramid_Q1_vs_Q5_overlay_absolute.pdf", width = 8, height = 5)
+
+# Sex ratio comparison across deciles
+sex_props <- imd_pops_sex %>%
+  group_by(imd, split10, gender) %>%
+  summarise(popn = sum(abs(popn))) %>%
+  pivot_wider(names_from = gender, values_from = popn) %>%
+  mutate(pct_male = round(100 * males / (males + females), 2),
+         total = males + females)
+print("Sex ratio by IMD decile")
+print(sex_props)
+
+# Two-proportion z-test: proportion male in Q1 vs Q5
+sex_q1q5 <- sex_props %>% filter(imd %in% c(1, 5))
+prop.test(x = sex_q1q5$males, n = sex_q1q5$total)
+
+# Age structure summary across deciles
+age_summary <- imd_pops_sex %>%
+  group_by(imd, split10) %>%
+  mutate(total = sum(abs(popn))) %>%
+  ungroup() %>%
+  mutate(age_group = case_when(
+    age_band %in% c("0-5", "6-10", "11-20") ~ "young (0-20)",
+    age_band %in% c("71-80", "81-90", "91-100") ~ "elderly (71+)",
+    TRUE ~ "working age (21-70)"
+  )) %>%
+  group_by(imd, split10, age_group, total) %>%
+  summarise(popn = sum(abs(popn))) %>%
+  mutate(pct = round(100 * popn / total, 1))
+print("Age structure summary by IMD decile")
+print(age_summary)
 
 ############## By gender and antibiotic group ############################
 if(SWITCH_denominator == "GP"){

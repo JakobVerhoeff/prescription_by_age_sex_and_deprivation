@@ -11,7 +11,7 @@ library(janitor)
 #fmt:skip
 age_band_levels <- c(
   "0-5", "6-10", "11-20", "21-30", "31-40", "41-50", "51-60",
-  "61-70", "71-80", "81-90", "91-100", "over 100", "Unknown"
+  "61-70", "71-80", "81+", "Unknown"
 )
 
 # Read FOI data for all years in directory
@@ -22,8 +22,9 @@ foi_raw <- foi_files |>
   map_df(~ read_csv(.x, show_col_types = FALSE)) |>
   clean_names() |>
   mutate(
-    gender = str_to_lower(gender),
+    gender = recode(str_to_lower(gender), "female" = "woman", "male" = "man"),
     age_band = str_remove(age_band, "Age "),
+    age_band = recode(age_band, "81-90" = "81+", "91-100" = "81+", "over 100" = "81+"), # ONS has 90+ as max
     age_band = factor(age_band, levels = age_band_levels)
   )
 
@@ -97,7 +98,8 @@ foi_combined <- foi_data |>
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
     .by = c(bnf_chemical_substance_code, gender, age_band, lad_code, year)
-  )
+  ) |>
+  filter(!is.na(lad_code), str_starts(lad_code, "E")) # England only
 
 # 4. Add in age and sex of population by LAD --------------------------------
 ons_raw <- read_csv("data/ons_popn_lad_age_sex.csv")
@@ -107,15 +109,16 @@ ons_popn <- ons_raw |>
   pivot_longer(cols = starts_with("population_"), values_to = "popn") |>
   mutate(year = as.numeric(str_remove(name, "population_"))) |>
   group_by(lad_code) |>
-  # recode f to female, m to male
+  # recode f/m to man/woman
   mutate(gender = recode(sex,
-                      "f" = "female",
-                      "m" = "male")) |>
-  # add in age bands
+                      "f" = "woman",
+                      "m" = "man")) |>
+  # add in age bands (81+ combines ONS 81-89 and 90+ to match FOI)
   mutate(age_band = cut(
       age,
-      breaks = c(0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Inf),
-      labels = age_band_levels[-length(age_band_levels)], # remove Unknown
+      breaks = c(0, 5, 10, 20, 30, 40, 50, 60, 70, 80, Inf),
+      labels = c("0-5", "6-10", "11-20", "21-30", "31-40", "41-50",
+                 "51-60", "61-70", "71-80", "81+"),
       include.lowest = TRUE,
       right = TRUE
     )
@@ -156,7 +159,8 @@ foi_combined_lsoa <- foi_data |>
     total_patients = sum(unique_patient_count, na.rm = TRUE),
     total_items = sum(items, na.rm = TRUE),
     .by = c(bnf_chemical_substance_code, gender, age_band, lsoa_code, year)
-  ) 
+  ) |>
+  filter(!is.na(lsoa_code), str_starts(lsoa_code, "E")) # England only 
 
 # 7. Final data at LSOA ---------------------------------------
 combined_data_lsoa <- foi_combined_lsoa |>
@@ -169,222 +173,43 @@ combined_data_lsoa <- foi_combined_lsoa |>
 write_csv(combined_data_lsoa, "data/combined_data_lsoa.csv")
 
 
-# # 8. Use UKHSA IMD at GP level 
-# Should we add in / use the IMD values from UKHSA? 
-# Uses the LSAO where patients registered = divide by registered list? 
-# deprivationdata<-read.csv("data/deprivation_data.csv")%>%
-#   dplyr::select(-Sex,-Age,-Category,-Category.Type,-Lower.CI.95.0.limit,-Time.period.range,-Compared.to.goal,-New.data,-Time.period.Sortable,-Compared.to.ICB.sub.locations.value.or.percentiles,-Compared.to.England.value.or.percentiles,-Recent.Trend,-Value.note,-Denominator,-Count,-Upper.CI.99.8.limit,-Lower.CI.99.8.limit,-Upper.CI.95.0.limit,-Lower.CI.95.0.limit,-Indicator.ID,-Indicator.Name)
-# deprivationdata<-subset(deprivationdata, Time.period == "2019") # Select IMD2019
-# deprivationdata<-subset(deprivationdata,Area.Type=="GPs") # only use GP's
-# deprivationdata <- deprivationdata %>% rename(PRACTICE_CODE = Area.Code)
+# 8. Antibiotic group mapping  ---------------------------------------
+# Map BNF codes to antibiotic families (from reference table)
+library(readxl)
+antibiotic_lookup <- read_excel("data/foi02243_reference_tables.xlsx", sheet = 2) |>
+  select(bnf_chemical_substance_code = BNF_CHEMICAL_SUBSTANCE) |>
+  mutate(antibiotic_group = case_when(
+    bnf_chemical_substance_code %in% c("0501060D0","0501060E0") ~ "C&L",
+    bnf_chemical_substance_code %in% c("0501023A0","0501021A0","0501021B0","0501021L0","0501024A0",
+      "0501021C0","0501021D0","0501021E0","050102020","0501021F0","0501021M0","0501021H0",
+      "0501021G0","0501021K0","0501021J0","0501022C0","0501022B0","0501022D0","0501022A0") ~ "Ceph's",
+    bnf_chemical_substance_code %in% c("0501100H0","0501100J0","0501100C0") ~ "Lep",
+    bnf_chemical_substance_code %in% c("0501050N0","0501050H0","0501050B0","0501050A0","0501050C0","0501050K0") ~ "Macrolides",
+    bnf_chemical_substance_code %in% c("0501110C0","0501110G0") ~ "MTO",
+    bnf_chemical_substance_code %in% c("0501015P0","0501011P0","0501012G0","0501013K0","0501013B0",
+      "0501011J0","0501012H0","0501012U0","0501013C0","0501013E0","0501013L0","0501014N0","0501014S0") ~ "Penicillins",
+    bnf_chemical_substance_code %in% c("0501120P0","0501120X0","0501120L0","0501120Y0","0501120Q0","0501120N0") ~ "Quinolones",
+    bnf_chemical_substance_code %in% c("0501080W0","0501080D0","0501080V0","0501080T0","0501080J0") ~ "S&T",
+    bnf_chemical_substance_code %in% c("0501090R0","0501090K0","0501090V0","0501090U0","0501090S0",
+      "0501090Q0","0501090N0","0501090H0","0501090E0","0501090C0","0501090A0") ~ "TB",
+    bnf_chemical_substance_code %in% c("0501030V0","0501030T0","0501030P0","0501030L0","0501030Z0",
+      "0501030I0","0501030F0","0501030X0","0501030Y0") ~ "Tetracyclines",
+    bnf_chemical_substance_code %in% c("0501130R0","0501130H0","0501130S0") ~ "UTIs",
+    bnf_chemical_substance_code %in% c("0501040C0","0501040H0","0501040N0","0501040U0") ~ "Aminog.",
+    bnf_chemical_substance_code %in% c("0501070X0","0501070AE","0501070I0","0501070F0","0501070H0",
+      "0501070Y0","0501070AC","0501070M0","0501070W0","0501070AB","0501070Z0",
+      "0501070N0","0501070AA","0501070T0","0501070U0") ~ "Other",
+    TRUE ~ NA_character_
+  )) |>
+  filter(!is.na(antibiotic_group))
 
+# Add antibiotic groups to both datasets
+combined_data <- combined_data |>
+  left_join(antibiotic_lookup, by = "bnf_chemical_substance_code")
+combined_data_lsoa <- combined_data_lsoa |>
+  left_join(antibiotic_lookup, by = "bnf_chemical_substance_code")
 
-# 8. Is there a difference in IMD distribution between 2 methods? ---------------------------------------
-# IMD_RAW data
-# LSOA selected by GP postcode? 
-
-gp_lsoa <- combined_data_lsoa %>% 
-  group_by(lsoa_code, year) %>%
-  slice(1) %>%
-  ungroup() %>%
-  mutate(source = "GP data")
-
-# Get all years present in GP data
-gp_years <- unique(gp_lsoa$year)
-
-# Repeat raw LSOA data for every GP year
-raw_lsoa <- imd_raw %>%
-  mutate(source = "Raw LSOA data") %>%
-  cross_join(tibble(year = gp_years))  # one copy per year
-
-# Combine
-plot_data <- bind_rows(
-  raw_lsoa %>% select(imd_score, source, year),
-  gp_lsoa %>% select(imd_score, source, year)
-)
-
-# Plot
-ggplot(plot_data, aes(x = imd_score, fill = source, colour = source)) +
-  geom_histogram(aes(y = after_stat(density)),
-                 bins = 100,
-                 alpha = 0.1,
-                 position = "identity") +
-  labs(
-    title = "IMD Score Distribution Comparison:\nif use only GP postcode LSOA\n then more higher IMD and fewer low IMD",
-    x = "IMD Score",
-    y = "Density"
-  ) +
-  theme_minimal() + 
-  facet_wrap(~year)
-ggsave("plots/imd_score_distribution_comparison.png", width = 10, height = 6)
-### Same by year as same GPs each time
-ggplot(plot_data %>% filter(year == 2018), aes(x = imd_score, fill = source, colour = source)) +
-  geom_histogram(aes(y = after_stat(density)),
-                 bins = 100,
-                 alpha = 0.1,
-                 position = "identity") +
-  labs(
-    title = "IMD Score Distribution Comparison:\nif use only GP postcode LSOA\n then more higher IMD and fewer low IMD",
-    x = "IMD Score",
-    y = "Density"
-  ) +
-  theme_minimal() + 
-  facet_wrap(~year)
-ggsave("plots/imd_score_distribution_comparison.png", width = 10, height = 6)
-
-
-
-# 9. ### Does the different combinations matter?  ---------------------------------------
-# # Does the rate of items per patient vary by IMD quintile?
-# UKHSA linkage:
-lsoa_pop_by_quintile <- combined_data_lsoa |>
-  distinct(lsoa_code, population, imd_quintile, year) |>
-  group_by(imd_quintile) |>
-  summarise(total_pop = sum(population, na.rm = TRUE))
-
-# all populations by lsoa
-full_lsoa_pop_by_quintile <- imd_raw |>
-  mutate(
-    imd_quintile = ntile(imd_score, 5),
-    imd_quintile = paste0("Q", 6 - imd_quintile)
-  ) |>
-  group_by(imd_quintile) |>
-  summarise(total_pop = sum(population, na.rm = TRUE))
-
-lsoa_local_pop <- combined_data_lsoa |>
-  group_by(imd_quintile, year) |>
-  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
-  left_join(lsoa_pop_by_quintile, by = "imd_quintile") |>
-  mutate(rate = total_items / total_pop)
-
-lsoa_full_pop <- combined_data_lsoa |>
-  group_by(imd_quintile, year) |>
-  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
-  left_join(full_lsoa_pop_by_quintile, by = "imd_quintile") |>
-  mutate(rate = total_items / total_pop)
-
-### our linkage:
-lad_pop_by_quintile <- combined_data |>
-  distinct(lad_code, gender, age_band, pop_a_s, imd_quintile, year) |>
-  group_by(imd_quintile) |>
-  summarise(total_pop = sum(pop_a_s, na.rm = TRUE))
-
-lad_pop <- combined_data |>
-  group_by(imd_quintile, year) |>
-  summarise(total_items = sum(total_items, na.rm = TRUE)) |>
-  left_join(lad_pop_by_quintile, by = "imd_quintile") |>
-  mutate(rate = total_items / total_pop)
-
-## Compare 
-bind_rows(
- # lsoa_local_pop |> mutate(method = "LSOA (GP-postcode pop)"),
-  lsoa_full_pop  |> mutate(method = "LSOA (full England pop)"),
-  lad_pop        |> mutate(method = "LAD linkage")
-) |>
-  filter(!is.na(imd_quintile)) |>
-  ggplot(aes(x = imd_quintile, y = rate, fill = method)) +
-  geom_col(position = "dodge") +
-  facet_wrap(year ~ method) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(
-    x = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
-    y = "Items per person",
-    fill = NULL,
-    title = "Antibiotic prescribing rate by IMD quintile",
-    subtitle = "Comparison of three linkage and denominator methods"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-#### 10. Age standardisation ---------------------------------------
-### More old people in least deprived areas, so age standardisation is important to compare rates across IMD quintiles.
-### Suggests that the higher prescribing rates in more deprived areas may be even higher than they appear, 
-### once we account for the older population in less deprived areas.
-# 1. Calculate the standard population (total across all LADs)
-standard_pop <- combined_data |>
-  distinct(lad_code, gender, age_band, pop_a_s, year) |>
-  group_by(gender, age_band, year) |>
-  summarise(std_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop")
-
-# 2. Calculate stratum-specific rates within each IMD quintile
-stratum_rates <- combined_data |>
-  group_by(imd_quintile, gender, age_band, year) |>
-  summarise(
-    stratum_items = sum(total_items, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  left_join(
-    combined_data |>
-      distinct(lad_code, gender, age_band, pop_a_s, imd_quintile, year) |>
-      group_by(imd_quintile, gender, age_band) |>
-      summarise(stratum_pop = sum(pop_a_s, na.rm = TRUE), .groups = "drop"),
-    by = c("imd_quintile", "gender", "age_band")
-  ) |>
-  mutate(stratum_rate = stratum_items / stratum_pop)
-
-# 3. Apply standard population weights and sum to get ASR
-asr <- stratum_rates |>
-  left_join(standard_pop, by = c("gender", "age_band", "year")) |>
-  group_by(imd_quintile, year) |>
-  summarise(
-    asr = sum(stratum_rate * std_pop, na.rm = TRUE) / sum(std_pop, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# 4. Plot
-asr |>
-  filter(!is.na(imd_quintile)) |>
-  ggplot(aes(x = imd_quintile, y = asr)) +
-  geom_col(fill = "#4DAF4A") +
-  labs(
-    x = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
-    y = "Age-sex standardised items per person",
-    title = "Age-sex standardised antibiotic prescribing by IMD quintile",
-    subtitle = "Direct standardisation, England internal standard population"
-  ) +
-  theme_minimal() + 
-  facet_wrap(~ year)
-
-### But how can we see why more old in Q5 but more prescribing in Q1? 
-### Effect of IMD vs age??
-### Compare crude vs standardised
-bind_rows(
-  lad_pop |> mutate(type = "Crude rate"),
-  lsoa_full_pop |> mutate(type = "Crude rate (LSOA)"),
-  asr     |> mutate(rate = asr, type = "Age-sex standardised rate")
-) |>
-  filter(!is.na(imd_quintile)) |>
-  ggplot(aes(x = imd_quintile, y = rate, fill = type)) +
-  geom_col(position = "dodge") +
-  scale_fill_brewer(palette = "Set2") +
-  labs(
-    x    = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
-    y    = "Items per person",
-    fill = NULL,
-    title = "Crude vs age-sex standardised antibiotic prescribing by IMD quintile",
-    subtitle = "Standardisation steepens the gradient, revealing suppression by age structure"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom") + 
-  facet_wrap(~ year)
-
-bind_rows(
-  lad_pop |> mutate(type = "Crude rate (LAD, our linkage)"),
-  lsoa_full_pop |> mutate(type = "Crude rate (LSOA, UKHSA method)"),
-  asr     |> mutate(rate = asr, type = "Age-sex standardised rate")
-) |>
-  filter(!is.na(imd_quintile)) |>
-  ggplot(aes(x = imd_quintile, y = rate, fill = type)) +
-  geom_col(position = "dodge") +
-  scale_fill_brewer(palette = "Set2") +
-  labs(
-    x    = "IMD quintile (Q1 = most deprived, Q5 = least deprived)",
-    y    = "Items per person",
-    fill = NULL,
-    title = "Crude vs age-sex standardised antibiotic prescribing by IMD quintile",
-    subtitle = "Standardisation steepens the gradient, revealing suppression by age structure"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom") + 
-  facet_grid(type ~ year, scales = "free") 
+# Overwrite with antibiotic groups included
+write_csv(combined_data, "data/combined_data.csv")
+write_csv(combined_data_lsoa, "data/combined_data_lsoa.csv")
 
