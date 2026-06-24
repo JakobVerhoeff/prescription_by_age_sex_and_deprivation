@@ -147,3 +147,4 @@ Two geographic linkage methods are implemented:
 2. **LSOA linkage** (UKHSA method): GP practice postcode -> LSOA code -> LSOA-level IMD. Population denominator: mid-2015 from IMD file (fixed across years).
 
 The LAD method is used as the primary analysis because it provides year-specific population denominators. The LSOA method provides more granular deprivation measurement but uses a fixed population denominator. Both are compared in `04_linkage_comparison.R`.
+
