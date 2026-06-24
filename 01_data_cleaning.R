@@ -50,8 +50,6 @@ foi_data <- foi_raw |>
   mutate(year = as.integer(str_extract(financial_year, "^\\d{4}"))) |>
   select(-financial_year)
 
-rm(foi_raw)
-
 ## IMD score ---------------------------------------
 # Read raw data
 imd_raw <- read_csv(
@@ -143,8 +141,6 @@ ons_data <- ons_raw |>
 
 ### Check = 0
 # sum(ons_data %>% filter(year == 2022) %>% select(pop_a_s), na.rm = TRUE) - sum(ons_raw$population_2022, na.rm = TRUE)
-
-rm(ons_raw)
 
 # 5. Final data => baseline analysis  ---------------------------------------
 # Combine IMD by LAD code with FOI data at LAD level (up from GP)
